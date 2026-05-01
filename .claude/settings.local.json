@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(open /Users/luoxuan/Downloads/grid-type-tool.html)",
+      "Bash(python3 -c \" import sys, json lines = sys.stdin.readlines\\(\\) for line in lines[-20:]: try: data = json.loads\\(line\\) if data.get\\('type'\\) in ['user', 'assistant']: role = data.get\\('type', ''\\) content = data.get\\('message', {}\\).get\\('content', ''\\) if isinstance\\(content, list\\): for item in content: if isinstance\\(item, dict\\) and item.get\\('type'\\) == 'text': print\\(f'[{role}]: {item[\\\\\"text\\\\\"][:500]}'\\) break elif isinstance\\(content, str\\): print\\(f'[{role}]: {content[:500]}'\\) except: pass \")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}

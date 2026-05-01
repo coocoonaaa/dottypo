@@ -1,0 +1,1716 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grid Type — 网格字体设计工具</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f7f4;
+  --bg2: #eeeeeb;
+  --bg3: #e5e5e2;
+  --border: rgba(0,0,0,0.09);
+  --border2: rgba(0,0,0,0.15);
+  --text: #1c1c18;
+  --text2: #5a5a54;
+  --text3: #aaa9a0;
+  --accent: #3d6e00;
+  --accent2: #2c5200;
+  --cell-active: #3d6e00;
+  --cell-hover: rgba(61,110,0,0.1);
+  --cell-border: rgba(0,0,0,0.07);
+  --panel-w: 220px;
+  --preview-w: 280px;
+  --header-h: 52px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── HEADER ── */
+header {
+  height: var(--header-h);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 24px;
+  flex-shrink: 0;
+  background: var(--bg);
+  position: relative;
+  z-index: 10;
+}
+.logo {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  text-transform: uppercase;
+  font-weight: 400;
+}
+.header-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.btn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text2);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+  font-weight: 500;
+}
+.btn.primary:hover { background: var(--accent2); border-color: var(--accent2); }
+.btn.danger:hover { border-color: #f05050; color: #f05050; }
+
+/* ── LAYOUT ── */
+.workspace {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── LEFT PANEL ── */
+.left-panel {
+  width: auto;
+  min-width: 210px;
+  max-width: 260px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--bg2);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.panel-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 12px;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.slider-name {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text2);
+  width: 60px;
+  flex-shrink: 0;
+}
+.slider-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  min-width: 30px;
+  text-align: center;
+  flex-shrink: 0;
+  background: rgba(212,240,74,0.08);
+  border: 1px solid rgba(212,240,74,0.22);
+  border-radius: 3px;
+  padding: 2px 4px;
+  line-height: 1.4;
+}
+input[type=range] {
+  -webkit-appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 2px;
+  background: var(--border2);
+  border-radius: 1px;
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+.grid-type-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.grid-type-btn {
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text2);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.grid-type-btn:hover { background: var(--bg3); color: var(--text); }
+.grid-type-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(212,240,74,0.06); }
+.grid-type-icon {
+  width: 20px; height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── CANVAS AREA ── */
+.canvas-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+.char-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.char-display {
+  font-family: 'DM Mono', monospace;
+  font-size: 32px;
+  color: var(--accent);
+  min-width: 40px;
+  text-align: center;
+  line-height: 1;
+}
+.nav-btn {
+  width: 28px; height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+#grid-canvas {
+  cursor: crosshair;
+  display: block;
+  border-radius: 4px;
+}
+
+.canvas-wrapper {
+  transform-origin: center center;
+  transition: transform 0.12s ease;
+  display: inline-block;
+}
+.canvas-bottom {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.canvas-hint {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.zoom-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.zoom-btn {
+  width: 26px; height: 26px;
+  border-radius: 4px;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.zoom-btn:hover { border-color: var(--accent); color: var(--accent); }
+.zoom-btn.theme-toggle {
+  width: 26px; height: 26px;
+  padding: 0;
+}
+.zoom-display {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text2);
+  min-width: 40px;
+  text-align: center;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 3px 5px;
+}
+
+/* ── DARK MODE ── */
+body.dark {
+  --bg: #0f0f0d;
+  --bg2: #181815;
+  --bg3: #222220;
+  --border: rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.14);
+  --text: #e8e6df;
+  --text2: #999890;
+  --text3: #5a5950;
+  --accent: #d4f04a;
+  --accent2: #a8c038;
+  --cell-active: #d4f04a;
+  --cell-hover: rgba(212,240,74,0.2);
+  --cell-border: rgba(255,255,255,0.06);
+}
+body.dark .btn.primary { color: #0f0f0d; }
+
+/* ── RIGHT PANEL ── */
+.right-panel {
+  width: var(--preview-w);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--bg2);
+}
+.char-grid-header {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.char-tab {
+  flex: 1;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text3);
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.char-tab:hover { border-color: var(--border2); color: var(--text2); }
+.char-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(212,240,74,0.07); }
+.char-tab-count {
+  font-size: 8px;
+  opacity: 0.55;
+  letter-spacing: 0;
+}
+#glyph-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  color: var(--text3);
+  white-space: nowrap;
+  margin-left: auto;
+}
+.char-grid-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+.char-grid-scroll::-webkit-scrollbar { width: 4px; }
+.char-grid-scroll::-webkit-scrollbar-track { background: transparent; }
+.char-grid-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.char-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+.char-cell {
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg3);
+}
+.char-cell:hover { border-color: var(--border2); }
+.char-cell.active { border-color: var(--accent); background: rgba(212,240,74,0.06); }
+.char-cell canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.char-cell-label {
+  position: absolute;
+  bottom: 2px;
+  right: 3px;
+  font-family: 'DM Mono', monospace;
+  font-size: 7px;
+  color: var(--text3);
+  line-height: 1;
+}
+.char-group-label {
+  grid-column: 1 / -1;
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--text3);
+  padding: 8px 2px 3px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.char-group-label:first-child { border-top: none; padding-top: 2px; }
+.char-group-count {
+  font-size: 7px;
+  opacity: 0.5;
+}
+
+/* preview text area */
+.preview-section {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  flex-shrink: 0;
+}
+.preview-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 8px;
+}
+#preview-input {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text2);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  padding: 6px 8px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+#preview-input:focus { border-color: var(--accent); }
+#preview-canvas-wrap {
+  margin-top: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+}
+#preview-canvas { display: block; width: 100%; }
+
+/* scrollbar global */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Grid Type</div>
+  <div style="width:1px;height:18px;background:var(--border);"></div>
+  <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:0.06em;" id="status-bar">Ready</div>
+  <div class="header-tools">
+    <button class="btn" onclick="randomizeGlyph()">Random</button>
+    <button class="btn" onclick="toggleGrid()">Grid</button>
+    <button class="btn danger" onclick="clearGlyph()">Clear</button>
+    <div style="width:1px;height:18px;background:var(--border);"></div>
+    <button class="btn" onclick="saveProject()">Save</button>
+    <button class="btn" onclick="loadProject()">Load</button>
+    <div style="width:1px;height:18px;background:var(--border);"></div>
+    <button class="btn" onclick="downloadSVG()">SVG</button>
+    <button class="btn primary" onclick="downloadFont()">Font ↓</button>
+  </div>
+</header>
+
+<div class="workspace">
+
+  <!-- LEFT PANEL -->
+  <div class="left-panel">
+    <div class="panel-section">
+      <div class="panel-label">Grid Parameters</div>
+      <div class="slider-row">
+        <span class="slider-name">Rows</span>
+        <input type="range" id="sl-rows" min="3" max="12" value="8" oninput="updateParam('rows',this.value)">
+        <span class="slider-val" id="v-rows">8</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-name">Cols</span>
+        <input type="range" id="sl-cols" min="3" max="10" value="8" oninput="updateParam('cols',this.value)">
+        <span class="slider-val" id="v-cols">8</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-name">Gutter X</span>
+        <input type="range" id="sl-gutterX" min="-20" max="10" value="0" oninput="updateParam('gutterX',this.value)">
+        <span class="slider-val" id="v-gutterX">0</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-name">Gutter Y</span>
+        <input type="range" id="sl-gutterY" min="-20" max="10" value="0" oninput="updateParam('gutterY',this.value)">
+        <span class="slider-val" id="v-gutterY">0</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-name">Smooth</span>
+        <input type="range" id="sl-smooth" min="0" max="100" value="0" oninput="updateParam('smooth',this.value)">
+        <span class="slider-val" id="v-smooth">0</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-name">Skew</span>
+        <input type="range" id="sl-skew" min="-40" max="40" value="0" oninput="updateParam('skew',this.value)">
+        <span class="slider-val" id="v-skew">0</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Cell Shape</div>
+      <div class="grid-type-btns">
+        <button class="grid-type-btn active" onclick="setGridType('rect')" data-type="rect">
+          <span class="grid-type-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="currentColor"/></svg>
+          </span>Rectangle
+        </button>
+        <button class="grid-type-btn" onclick="setGridType('circle')" data-type="circle">
+          <span class="grid-type-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="currentColor"/></svg>
+          </span>Circle
+        </button>
+        <button class="grid-type-btn" onclick="setGridType('diamond')" data-type="diamond">
+          <span class="grid-type-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16"><polygon points="8,2 14,8 8,14 2,8" fill="currentColor"/></svg>
+          </span>Diamond
+        </button>
+        <button class="grid-type-btn" onclick="setGridType('cross')" data-type="cross">
+          <span class="grid-type-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="5" y="1" width="6" height="14" rx="1" fill="currentColor"/><rect x="1" y="5" width="14" height="6" rx="1" fill="currentColor"/></svg>
+          </span>Cross
+        </button>
+        <button class="grid-type-btn" onclick="setGridType('star4')" data-type="star4">
+          <span class="grid-type-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1 C8 5, 11 5, 15 8 C11 8, 11 11, 8 15 C8 11, 5 11, 1 8 C5 8, 5 5, 8 1Z" fill="currentColor"/></svg>
+          </span>Star / Organic
+        </button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Cell Color</div>
+      <div class="slider-row">
+        <span class="slider-name" style="width:auto;flex:1">Hue</span>
+        <input type="color" id="color-picker" value="#d4f04a" oninput="updateColor(this.value)"
+          style="width:32px;height:22px;border:1px solid var(--border2);border-radius:3px;background:transparent;cursor:pointer;padding:1px;">
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CANVAS CENTER -->
+  <div class="canvas-area">
+    <div class="char-nav">
+      <button class="nav-btn" onclick="prevChar()">‹</button>
+      <div class="char-display" id="current-char-display">A</div>
+      <button class="nav-btn" onclick="nextChar()">›</button>
+    </div>
+    <div class="canvas-wrapper" id="canvas-wrapper">
+      <canvas id="grid-canvas"></canvas>
+    </div>
+    <div class="canvas-bottom">
+      <div class="canvas-hint">Click or drag to toggle cells</div>
+      <div class="zoom-bar">
+        <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out (Ctrl −)">−</button>
+        <span class="zoom-display" id="zoom-display">100%</span>
+        <button class="zoom-btn" onclick="zoomIn()" title="Zoom In (Ctrl +)">+</button>
+        <button class="zoom-btn" onclick="resetZoom()" title="Reset Zoom (Ctrl 0)" style="font-family:'DM Mono',monospace;font-size:9px;width:auto;padding:0 7px;letter-spacing:0.06em;">100%</button>
+        <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
+        <button class="zoom-btn theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Day / Night"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
+    <div class="char-grid-header">
+      <button class="char-tab active" id="tab-latin" onclick="switchCharTab('latin')">
+        Latin <span class="char-tab-count">94</span>
+      </button>
+      <button class="char-tab" id="tab-korean" onclick="switchCharTab('korean')">
+        한글 <span class="char-tab-count">51</span>
+      </button>
+      <span id="glyph-count"></span>
+    </div>
+    <div class="char-grid-scroll">
+      <div class="char-grid" id="char-grid"></div>
+    </div>
+    <div class="preview-section">
+      <div class="preview-label">Text Preview</div>
+      <input type="text" id="preview-input" value="HELLO" maxlength="20" oninput="renderPreview()">
+      <div id="preview-canvas-wrap">
+        <canvas id="preview-canvas" height="48"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- hidden file input for load -->
+<input type="file" id="file-input" accept=".json" style="display:none" onchange="handleLoadFile(event)">
+
+<script>
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+// ── THEME SYSTEM ──
+const THEMES = {
+  light: {
+    canvasBg:        'transparent',
+    thumbnailBg:     '#ffffff',
+    placeholderText: 'rgba(0,0,0,0.25)',
+    hoverFill:       'rgba(61,110,0,0.08)',
+    hoverStroke:     'rgba(61,110,0,0.32)',
+    gridLine:        'rgba(0,0,0,0.13)',
+  },
+  dark: {
+    canvasBg:        '#0f0f0d',
+    thumbnailBg:     '#222220',
+    placeholderText: 'rgba(255,255,255,0.22)',
+    hoverFill:       'rgba(212,240,74,0.18)',
+    hoverStroke:     'rgba(212,240,74,0.4)',
+    gridLine:        'rgba(255,255,255,0.22)',
+  }
+};
+let currentTheme = 'light';
+
+const SVG_MOON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+const SVG_SUN  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="7.05" y2="7.05"/><line x1="16.95" y1="16.95" x2="19.07" y2="19.07"/><line x1="4.93" y1="19.07" x2="7.05" y2="16.95"/><line x1="16.95" y1="7.05" x2="19.07" y2="4.93"/></svg>`;
+
+const CHARSET_LATIN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?@&-_:;"\'()[]{}#$%/\\+*=<>~|^`'.split('');
+const CHARSET_KOREAN = 'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎㄲㄸㅃㅆㅉㄳㄵㄶㄺㄻㄼㄽㄾㄿㅀㅄㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣㅐㅒㅔㅖㅘㅙㅚㅝㅞㅟㅢ'.split('');
+const CHARSET = [...CHARSET_LATIN, ...CHARSET_KOREAN];
+
+let state = {
+  rows: 8,
+  cols: 8,
+  gutterX: 0,
+  gutterY: 0,
+  smooth: 0,
+  skew: 0,
+  gridType: 'rect',
+  cellColor: '#d4f04a',
+  showGrid: true,
+  currentCharIdx: 0,
+  zoom: 1.0,
+  glyphs: {}
+};
+
+// Initialize glyphs with empty arrays
+CHARSET.forEach(c => { state.glyphs[c] = null; });
+
+// ─────────────────────────────────────────────
+//  CANVAS SETUP
+// ─────────────────────────────────────────────
+const canvas = document.getElementById('grid-canvas');
+const ctx = canvas.getContext('2d');
+
+const CELL_SIZE = 47; // 52 * 0.9
+const CANVAS_PAD = 24;
+let isDragging = false;
+let dragMode = null; // 'on' or 'off'
+
+function getCanvasSize() {
+  const { rows, cols, gutterX, gutterY, skew } = state;
+  const baseW = cols * CELL_SIZE + (cols - 1) * gutterX;
+  const skewExtra = Math.abs(skew) * (CELL_SIZE * 0.6);
+  const w = baseW + skewExtra + CANVAS_PAD * 2;
+  const h = rows * CELL_SIZE + (rows - 1) * gutterY + CANVAS_PAD * 2;
+  return { w, h };
+}
+
+function resizeCanvas() {
+  const { w, h } = getCanvasSize();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function getSkewOffset(row) {
+  const { rows, skew } = state;
+  const totalRows = rows - 1 || 1;
+  // 底行偏移0，顶行偏移最大；正值=右倾（italic），负值=左倾
+  const t = (totalRows - row) / totalRows;
+  return skew * t * (CELL_SIZE * 0.6);
+}
+
+function getCellPos(col, row) {
+  const { gutterX, gutterY, skew } = state;
+  const skewOff = getSkewOffset(row);
+  const skewExtra = Math.abs(skew) * (CELL_SIZE * 0.6);
+  // 负skew时顶行左移，补偿让整体居中
+  const compensate = skew < 0 ? skewExtra : 0;
+  const x = CANVAS_PAD + col * (CELL_SIZE + gutterX) + skewOff + compensate;
+  const y = CANVAS_PAD + row * (CELL_SIZE + gutterY);
+  return { x, y };
+}
+
+function getCellFromPoint(px, py) {
+  const { rows, cols, gutterX, gutterY } = state;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const { x, y } = getCellPos(c, r);
+      if (px >= x && px <= x + CELL_SIZE && py >= y && py <= y + CELL_SIZE) {
+        return { r, c };
+      }
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────
+//  DRAWING
+// ─────────────────────────────────────────────
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return {r,g,b};
+}
+
+function drawCell(cx, cy, size, active, hovered, type, smooth, color) {
+  const r = smooth / 100;
+  const s = size;
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  if (active) {
+    ctx.fillStyle = color;
+  } else if (hovered) {
+    ctx.fillStyle = 'rgba(212,240,74,0.15)';
+  } else {
+    ctx.fillStyle = 'transparent';
+  }
+
+  // helper: draw the shape path for current type+smooth into current context
+  function shapePath(ctx2, s2, r2, type2) {
+    ctx2.beginPath();
+    switch(type2) {
+      case 'rect': {
+        const rr = r2 * s2 * 0.5;
+        ctx2.roundRect(0, 0, s2, s2, rr);
+        break;
+      }
+      case 'circle': {
+        ctx2.arc(s2/2, s2/2, s2/2, 0, Math.PI * 2);
+        break;
+      }
+      case 'diamond': {
+        const h = s2 / 2;
+        const k = r2 * 0.45;
+        ctx2.moveTo(h*(1+k), h*k);
+        ctx2.lineTo(h*(2-k), h*(1-k));
+        ctx2.quadraticCurveTo(s2, h, h*(2-k), h*(1+k));
+        ctx2.lineTo(h*(1+k), h*(2-k));
+        ctx2.quadraticCurveTo(h, s2, h*(1-k), h*(2-k));
+        ctx2.lineTo(h*k, h*(1+k));
+        ctx2.quadraticCurveTo(0, h, h*k, h*(1-k));
+        ctx2.lineTo(h*(1-k), h*k);
+        ctx2.quadraticCurveTo(h, 0, h*(1+k), h*k);
+        ctx2.closePath();
+        break;
+      }
+      case 'cross': {
+        const off = s2 * 0.35;
+        const rc = r2 * off * 0.8;
+        ctx2.roundRect(0, off*(1-r2*0.3), s2, s2 - 2*off*(1-r2*0.3), rc);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.beginPath();
+        ctx2.roundRect(off*(1-r2*0.3), 0, s2 - 2*off*(1-r2*0.3), s2, rc);
+        ctx2.closePath();
+        break;
+      }
+      case 'star4': {
+        const cx2 = s2/2, cy2 = s2/2;
+        const outer = s2/2;
+        const inner = s2 * (0.08 + r2 * 0.40);
+        for (let i = 0; i < 8; i++) {
+          const angle = (i * Math.PI / 4) - Math.PI/2;
+          const rad = i % 2 === 0 ? outer : inner;
+          const px2 = cx2 + Math.cos(angle) * rad;
+          const py2 = cy2 + Math.sin(angle) * rad;
+          if (i === 0) ctx2.moveTo(px2, py2);
+          else ctx2.lineTo(px2, py2);
+        }
+        ctx2.closePath();
+        break;
+      }
+    }
+  }
+
+  if (active) {
+    ctx.fillStyle = color;
+    shapePath(ctx, s, r, type);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6 * r;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  } else if (hovered) {
+    ctx.fillStyle = THEMES[currentTheme].hoverFill;
+    shapePath(ctx, s, r, type);
+    ctx.fill();
+    if (state.showGrid) {
+      ctx.strokeStyle = THEMES[currentTheme].hoverStroke;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  } else {
+    if (state.showGrid) {
+      ctx.strokeStyle = THEMES[currentTheme].gridLine;
+      ctx.lineWidth = 1;
+      shapePath(ctx, s, r, type);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+function renderMainCanvas(hoveredCell) {
+  const { rows, cols, gutterX, gutterY, gridType, smooth, cellColor } = state;
+  const { w, h } = getCanvasSize();
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = THEMES[currentTheme].canvasBg;
+  ctx.fillRect(0, 0, w, h);
+
+  const glyph = getCurrentGlyph();
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const { x, y } = getCellPos(c, r);
+      const active = glyph && glyph[r] && glyph[r][c];
+      const hovered = hoveredCell && hoveredCell.r === r && hoveredCell.c === c;
+      drawCell(x, y, CELL_SIZE, active, hovered, gridType, smooth, cellColor);
+    }
+  }
+
+}
+
+function renderConnections(glyph, t) {
+  if (!glyph) return;
+  const { rows, cols, gutterX, gutterY, cellColor, gridType } = state;
+  const rgb = hexToRgb(cellColor);
+  ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${t * 0.9})`;
+
+  // Pill radius factor: circle=fully rounded, rect=smooth-driven, others=sharp
+  const pillFactor = gridType === 'circle' ? 1 : (gridType === 'rect' ? t * 0.5 : 0);
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!glyph[r]?.[c]) continue;
+
+      // Right neighbor
+      if (c + 1 < cols && glyph[r]?.[c+1]) {
+        const p1 = getCellPos(c, r);
+        const p2 = getCellPos(c+1, r);
+        const bridgeW = p2.x - (p1.x + CELL_SIZE);
+        if (bridgeW > 0) {
+          const bridgeH = CELL_SIZE * t * 0.6;
+          const by = p1.y + (CELL_SIZE - bridgeH) / 2;
+          const rx = bridgeH / 2 * pillFactor;
+          ctx.beginPath();
+          ctx.roundRect(p1.x + CELL_SIZE, by, bridgeW, bridgeH, rx);
+          ctx.fill();
+        }
+      }
+
+      // Bottom neighbor
+      if (r + 1 < rows && glyph[r+1]?.[c]) {
+        const p1 = getCellPos(c, r);
+        const p2 = getCellPos(c, r+1);
+        const bridgeH = p2.y - (p1.y + CELL_SIZE);
+        if (bridgeH > 0) {
+          const bridgeW = CELL_SIZE * t * 0.6;
+          const bx = p1.x + (CELL_SIZE - bridgeW) / 2;
+          const ry = bridgeW / 2 * pillFactor;
+          ctx.beginPath();
+          ctx.roundRect(bx, p1.y + CELL_SIZE, bridgeW, bridgeH, ry);
+          ctx.fill();
+        }
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  THUMBNAIL RENDERING
+// ─────────────────────────────────────────────
+function renderThumbnail(char, canvasEl) {
+  const glyph = state.glyphs[char];
+  const { rows, cols, gridType, smooth, cellColor } = state;
+  const s = Math.floor(canvasEl.parentElement.offsetWidth);
+  const dpr = window.devicePixelRatio || 1;
+  canvasEl.width = s * dpr;
+  canvasEl.height = s * dpr;
+  const tc = canvasEl.getContext('2d');
+  tc.scale(dpr, dpr);
+
+  tc.fillStyle = THEMES[currentTheme].thumbnailBg;
+  tc.fillRect(0,0,s,s);
+
+  if (!glyph || !glyph.some(row => row.some(v => v))) {
+    tc.fillStyle = THEMES[currentTheme].placeholderText;
+    tc.font = `${s*0.52}px 'DM Sans', sans-serif`;
+    tc.textAlign = 'center';
+    tc.textBaseline = 'middle';
+    tc.fillText(char, s/2, s/2 + s*0.04);
+    return;
+  }
+
+  const pad = 3;
+  const cs = Math.floor((s - pad*2) / Math.max(cols, rows));
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!glyph[r]?.[c]) continue;
+      const x = pad + c * cs + (s - pad*2 - cols*cs)/2;
+      const y = pad + r * cs + (s - pad*2 - rows*cs)/2;
+
+      tc.fillStyle = cellColor;
+      tc.beginPath();
+      switch(gridType) {
+        case 'rect': tc.roundRect(x, y, cs-1, cs-1, cs*0.45*smooth/100); break;
+        case 'circle': tc.ellipse(x+cs/2,y+cs/2,cs/2-0.5,cs/2-0.5,0,0,Math.PI*2); break;
+        case 'diamond': {
+          const hh = cs/2, k = (smooth/100)*0.45;
+          tc.moveTo(x+hh*(1+k), y+hh*k);
+          tc.lineTo(x+hh*(2-k), y+hh*(1-k));
+          tc.quadraticCurveTo(x+cs, y+hh, x+hh*(2-k), y+hh*(1+k));
+          tc.lineTo(x+hh*(1+k), y+hh*(2-k));
+          tc.quadraticCurveTo(x+hh, y+cs, x+hh*(1-k), y+hh*(2-k));
+          tc.lineTo(x+hh*k, y+hh*(1+k));
+          tc.quadraticCurveTo(x, y+hh, x+hh*k, y+hh*(1-k));
+          tc.lineTo(x+hh*(1-k), y+hh*k);
+          tc.quadraticCurveTo(x+hh, y, x+hh*(1+k), y+hh*k);
+          tc.closePath(); break;
+        }
+        case 'cross': {
+          const off=cs*0.35;
+          tc.moveTo(x+off,y); tc.lineTo(x+cs-off,y); tc.lineTo(x+cs-off,y+off);
+          tc.lineTo(x+cs,y+off); tc.lineTo(x+cs,y+cs-off); tc.lineTo(x+cs-off,y+cs-off);
+          tc.lineTo(x+cs-off,y+cs); tc.lineTo(x+off,y+cs); tc.lineTo(x+off,y+cs-off);
+          tc.lineTo(x,y+cs-off); tc.lineTo(x,y+off); tc.lineTo(x+off,y+off);
+          tc.closePath(); break;
+        }
+        case 'star4': {
+          const cx2=x+cs/2,cy2=y+cs/2,outer=cs/2,inner=cs*(0.18+smooth/100*0.25);
+          for(let i=0;i<8;i++){
+            const a=(i*Math.PI/4)-Math.PI/2,rad=i%2===0?outer:inner;
+            const px2=cx2+Math.cos(a)*rad,py2=cy2+Math.sin(a)*rad;
+            i===0?tc.moveTo(px2,py2):tc.lineTo(px2,py2);
+          }
+          tc.closePath(); break;
+        }
+        default: tc.rect(x, y, cs-1, cs-1);
+      }
+      tc.fill();
+    }
+  }
+}
+
+function renderAllThumbnails() {
+  document.querySelectorAll('#char-grid .char-cell').forEach(cell => {
+    const cnv = cell.querySelector('canvas');
+    if (cnv) renderThumbnail(cell.dataset.char, cnv);
+  });
+  updateGlyphCount();
+}
+
+// ─────────────────────────────────────────────
+//  PREVIEW RENDERING
+// ─────────────────────────────────────────────
+function renderPreview() {
+  const text = document.getElementById('preview-input').value;
+  const { rows, cols, gridType, smooth, cellColor } = state;
+  const wrap = document.getElementById('preview-canvas-wrap');
+  const pcanvas = document.getElementById('preview-canvas');
+  const TSIZE = 8;
+  const GAP = 2;
+  const CHAR_W = cols * TSIZE + (cols-1);
+  const CHAR_H = rows * TSIZE + (rows-1);
+  const SPACE = 4;
+  const totalW = text.length * (CHAR_W + SPACE);
+  const dpr = window.devicePixelRatio || 1;
+
+  pcanvas.width = Math.max(totalW, wrap.offsetWidth - 16) * dpr;
+  pcanvas.height = (CHAR_H + 16) * dpr;
+  pcanvas.style.height = (CHAR_H + 16) + 'px';
+
+  const pc = pcanvas.getContext('2d');
+  pc.scale(dpr, dpr);
+  pc.clearRect(0, 0, pcanvas.width, pcanvas.height);
+
+  for (let ci = 0; ci < text.length; ci++) {
+    const ch = text[ci];
+    const glyph = state.glyphs[ch];
+    if (!glyph) continue;
+
+    const ox = ci * (CHAR_W + SPACE) + 8;
+    const oy = 8;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!glyph[r]?.[c]) continue;
+        const x = ox + c * (TSIZE + 1);
+        const y = oy + r * (TSIZE + 1);
+        pc.fillStyle = cellColor;
+        pc.beginPath();
+        switch(gridType) {
+          case 'rect': pc.roundRect(x,y,TSIZE,TSIZE, TSIZE*0.45*smooth/100); break;
+          case 'circle': pc.ellipse(x+TSIZE/2,y+TSIZE/2,TSIZE/2,TSIZE/2,0,0,Math.PI*2); break;
+          case 'diamond': {
+            const hh = TSIZE/2, k = (smooth/100)*0.45;
+            pc.moveTo(x+hh*(1+k), y+hh*k);
+            pc.lineTo(x+hh*(2-k), y+hh*(1-k));
+            pc.quadraticCurveTo(x+TSIZE, y+hh, x+hh*(2-k), y+hh*(1+k));
+            pc.lineTo(x+hh*(1+k), y+hh*(2-k));
+            pc.quadraticCurveTo(x+hh, y+TSIZE, x+hh*(1-k), y+hh*(2-k));
+            pc.lineTo(x+hh*k, y+hh*(1+k));
+            pc.quadraticCurveTo(x, y+hh, x+hh*k, y+hh*(1-k));
+            pc.lineTo(x+hh*(1-k), y+hh*k);
+            pc.quadraticCurveTo(x+hh, y, x+hh*(1+k), y+hh*k);
+            pc.closePath(); break;
+          }
+          case 'cross': {
+            const off=TSIZE*0.35;
+            pc.moveTo(x+off,y); pc.lineTo(x+TSIZE-off,y); pc.lineTo(x+TSIZE-off,y+off);
+            pc.lineTo(x+TSIZE,y+off); pc.lineTo(x+TSIZE,y+TSIZE-off); pc.lineTo(x+TSIZE-off,y+TSIZE-off);
+            pc.lineTo(x+TSIZE-off,y+TSIZE); pc.lineTo(x+off,y+TSIZE); pc.lineTo(x+off,y+TSIZE-off);
+            pc.lineTo(x,y+TSIZE-off); pc.lineTo(x,y+off); pc.lineTo(x+off,y+off);
+            pc.closePath(); break;
+          }
+          case 'star4': {
+            const cx2=x+TSIZE/2,cy2=y+TSIZE/2,outer=TSIZE/2,inner=TSIZE*(0.18+smooth/100*0.25);
+            for(let i=0;i<8;i++){
+              const a=(i*Math.PI/4)-Math.PI/2,rad=i%2===0?outer:inner;
+              const px2=cx2+Math.cos(a)*rad,py2=cy2+Math.sin(a)*rad;
+              i===0?pc.moveTo(px2,py2):pc.lineTo(px2,py2);
+            }
+            pc.closePath(); break;
+          }
+          default: pc.rect(x,y,TSIZE,TSIZE);
+        }
+        pc.fill();
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  GLYPH MANAGEMENT
+// ─────────────────────────────────────────────
+function getCurrentGlyph() {
+  const char = CHARSET[state.currentCharIdx];
+  if (!state.glyphs[char]) {
+    state.glyphs[char] = Array.from({length: state.rows}, () => new Array(state.cols).fill(false));
+  }
+  return state.glyphs[char];
+}
+
+function ensureGlyphSize() {
+  const char = CHARSET[state.currentCharIdx];
+  const g = state.glyphs[char];
+  if (!g) return;
+  // Pad/trim to current rows/cols
+  const newG = Array.from({length: state.rows}, (_, r) =>
+    Array.from({length: state.cols}, (_, c) => g[r]?.[c] || false)
+  );
+  state.glyphs[char] = newG;
+}
+
+// ─────────────────────────────────────────────
+//  MOUSE INTERACTIONS
+// ─────────────────────────────────────────────
+let hoveredCell = null;
+
+function getScaledPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    px: (e.clientX - rect.left) / state.zoom,
+    py: (e.clientY - rect.top) / state.zoom
+  };
+}
+
+// ── THEME TOGGLE ──
+function toggleTheme() {
+  currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+  document.body.classList.toggle('dark', currentTheme === 'dark');
+  document.getElementById('theme-toggle').innerHTML =
+    currentTheme === 'dark' ? SVG_SUN : SVG_MOON;
+  renderMainCanvas(hoveredCell);
+  renderAllThumbnails();
+}
+
+// ── ZOOM ──
+const ZOOM_STEP = 0.1, ZOOM_MIN = 0.25, ZOOM_MAX = 4.0;
+function applyZoom() {
+  document.getElementById('canvas-wrapper').style.transform = `scale(${state.zoom})`;
+  document.getElementById('zoom-display').textContent = Math.round(state.zoom * 100) + '%';
+}
+function zoomIn()    { state.zoom = Math.min(ZOOM_MAX, +(state.zoom + ZOOM_STEP).toFixed(2)); applyZoom(); }
+function zoomOut()   { state.zoom = Math.max(ZOOM_MIN, +(state.zoom - ZOOM_STEP).toFixed(2)); applyZoom(); }
+function resetZoom() { state.zoom = 1.0; applyZoom(); }
+
+canvas.addEventListener('mousedown', e => {
+  const { px, py } = getScaledPos(e);
+  const cell = getCellFromPoint(px, py);
+  if (!cell) return;
+  isDragging = true;
+  const glyph = getCurrentGlyph();
+  dragMode = glyph[cell.r][cell.c] ? 'off' : 'on';
+  glyph[cell.r][cell.c] = dragMode === 'on';
+  renderMainCanvas(hoveredCell);
+  updateThumbnail();
+  renderPreview();
+});
+
+canvas.addEventListener('mousemove', e => {
+  const { px, py } = getScaledPos(e);
+  hoveredCell = getCellFromPoint(px, py);
+  if (isDragging && hoveredCell) {
+    const glyph = getCurrentGlyph();
+    glyph[hoveredCell.r][hoveredCell.c] = dragMode === 'on';
+    updateThumbnail();
+    renderPreview();
+  }
+  renderMainCanvas(hoveredCell);
+});
+
+canvas.addEventListener('mouseup', () => { isDragging = false; autoSave(); });
+canvas.addEventListener('mouseleave', () => {
+  if (isDragging) autoSave();
+  isDragging = false;
+  hoveredCell = null;
+  renderMainCanvas(null);
+});
+
+// ─────────────────────────────────────────────
+//  CONTROLS
+// ─────────────────────────────────────────────
+function updateParam(name, val) {
+  val = parseInt(val);
+  state[name] = val;
+  document.getElementById('v-' + name).textContent = val;
+  if (name === 'rows' || name === 'cols') {
+    ensureGlyphSize();
+    renderAllThumbnails();
+  }
+  resizeCanvas();
+  renderMainCanvas(hoveredCell);
+  renderPreview();
+  autoSave();
+}
+
+function setGridType(type) {
+  state.gridType = type;
+  document.querySelectorAll('.grid-type-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.type === type);
+  });
+  renderMainCanvas(hoveredCell);
+  renderAllThumbnails();
+  renderPreview();
+  autoSave();
+}
+
+function updateColor(hex) {
+  state.cellColor = hex;
+  renderMainCanvas(hoveredCell);
+  renderAllThumbnails();
+  renderPreview();
+  autoSave();
+}
+
+function toggleGrid() {
+  state.showGrid = !state.showGrid;
+  renderMainCanvas(hoveredCell);
+}
+
+function clearGlyph() {
+  const char = CHARSET[state.currentCharIdx];
+  state.glyphs[char] = Array.from({length:state.rows},()=>new Array(state.cols).fill(false));
+  renderMainCanvas(hoveredCell);
+  updateThumbnail();
+  renderPreview();
+}
+
+function randomizeGlyph() {
+  const char = CHARSET[state.currentCharIdx];
+  state.glyphs[char] = Array.from({length:state.rows},()=>
+    Array.from({length:state.cols},()=>Math.random() > 0.55)
+  );
+  renderMainCanvas(hoveredCell);
+  updateThumbnail();
+  renderPreview();
+  setStatus('Randomized: ' + char);
+}
+
+function prevChar() {
+  state.currentCharIdx = (state.currentCharIdx - 1 + CHARSET.length) % CHARSET.length;
+  switchChar();
+}
+
+function nextChar() {
+  state.currentCharIdx = (state.currentCharIdx + 1) % CHARSET.length;
+  switchChar();
+}
+
+function switchChar() {
+  const char = CHARSET[state.currentCharIdx];
+  document.getElementById('current-char-display').textContent = char;
+  const expectedTab = state.currentCharIdx < CHARSET_LATIN.length ? 'latin' : 'korean';
+  if (expectedTab !== activeTab) switchCharTab(expectedTab);
+  ensureGlyphSize();
+  resizeCanvas();
+  renderMainCanvas(hoveredCell);
+  updateActiveCharCell();
+  setStatus('Editing: ' + char);
+}
+
+function updateActiveCharCell() {
+  document.querySelectorAll('.char-cell').forEach(cell => {
+    cell.classList.toggle('active', cell.dataset.char === CHARSET[state.currentCharIdx]);
+  });
+}
+
+function updateThumbnail() {
+  const char = CHARSET[state.currentCharIdx];
+  const cell = document.querySelector(`.char-cell[data-char="${CSS.escape(char)}"]`);
+  if (cell) {
+    const cnv = cell.querySelector('canvas');
+    if (cnv) renderThumbnail(char, cnv);
+  }
+  updateGlyphCount();
+}
+
+function updateGlyphCount() {
+  const isDrawn = c => state.glyphs[c] && state.glyphs[c].some(row => row.some(v => v));
+  if (activeTab === 'latin') {
+    const n = CHARSET_LATIN.filter(isDrawn).length;
+    document.getElementById('glyph-count').textContent = `${n} / ${CHARSET_LATIN.length}`;
+  } else {
+    const n = CHARSET_KOREAN.filter(isDrawn).length;
+    document.getElementById('glyph-count').textContent = `${n} / ${CHARSET_KOREAN.length}`;
+  }
+}
+
+function setStatus(msg) {
+  document.getElementById('status-bar').textContent = msg;
+}
+
+
+// ─────────────────────────────────────────────
+//  SAVE / LOAD
+// ─────────────────────────────────────────────
+function saveProject() {
+  const data = JSON.stringify({ config: {
+    rows: state.rows, cols: state.cols, gutterX: state.gutterX,
+    gutterY: state.gutterY, smooth: state.smooth, skew: state.skew,
+    gridType: state.gridType, cellColor: state.cellColor
+  }, glyphs: state.glyphs }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'grid-type-project.json'; a.click();
+  URL.revokeObjectURL(url);
+  setStatus('项目已导出');
+}
+
+function loadProject() {
+  document.getElementById('file-input').click();
+}
+
+function handleLoadFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      Object.assign(state, data.config);
+      state.glyphs = data.glyphs;
+      syncAllSliders();
+      setGridType(state.gridType);
+      resizeCanvas();
+      renderMainCanvas(null);
+      renderAllThumbnails();
+      renderPreview();
+      setStatus('项目已载入');
+    } catch(err) { setStatus('载入失败，文件格式错误'); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+// ─────────────────────────────────────────────
+//  同步所有滑块到 state
+// ─────────────────────────────────────────────
+function syncAllSliders() {
+  ['rows','cols','gutterX','gutterY','smooth','skew'].forEach(k => {
+    const el = document.getElementById('sl-'+k);
+    const vEl = document.getElementById('v-'+k);
+    if (el) el.value = state[k] ?? 0;
+    if (vEl) vEl.textContent = state[k] ?? 0;
+  });
+  document.getElementById('color-picker').value = state.cellColor || '#d4f04a';
+}
+
+// ─────────────────────────────────────────────
+//  AUTO SAVE / AUTO LOAD (localStorage)
+// ─────────────────────────────────────────────
+const STORAGE_KEY = 'gridtype_autosave';
+
+function autoSave() {
+  try {
+    const data = {
+      config: {
+        rows: state.rows, cols: state.cols,
+        gutterX: state.gutterX, gutterY: state.gutterY,
+        smooth: state.smooth, skew: state.skew,
+        gridType: state.gridType, cellColor: state.cellColor
+      },
+      glyphs: state.glyphs,
+      savedAt: new Date().toLocaleTimeString()
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    setStatus('已自动保存 · ' + data.savedAt);
+  } catch(e) { /* 存储满了忽略 */ }
+}
+
+function autoLoad() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    Object.assign(state, data.config);
+    state.glyphs = data.glyphs;
+    // 确保所有字符都有 key
+    CHARSET.forEach(c => { if (!(c in state.glyphs)) state.glyphs[c] = null; });
+    syncAllSliders();
+    setGridType(state.gridType);
+    return true;
+  } catch(e) { return false; }
+}
+
+// ─────────────────────────────────────────────
+//  SVG EXPORT
+// ─────────────────────────────────────────────
+function glyphToSVGPaths(glyph, opts) {
+  const { rows, cols, gutterX, gutterY, gridType, smooth, cellColor } = opts;
+  const paths = [];
+  const CS = 50;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!glyph?.[r]?.[c]) continue;
+      const x = c * (CS + gutterX);
+      const y = r * (CS + gutterY);
+      const rr = smooth / 100 * CS * 0.45;
+
+      if (gridType === 'rect') {
+        paths.push(`<rect x="${x}" y="${y}" width="${CS}" height="${CS}" rx="${rr}" fill="${cellColor}"/>`);
+      } else if (gridType === 'circle') {
+        paths.push(`<circle cx="${x+CS/2}" cy="${y+CS/2}" r="${CS/2}" fill="${cellColor}"/>`);
+      } else if (gridType === 'diamond') {
+        const h = CS/2;
+        paths.push(`<polygon points="${x+h},${y} ${x+CS},${y+h} ${x+h},${y+CS} ${x},${y+h}" fill="${cellColor}"/>`);
+      } else {
+        paths.push(`<rect x="${x}" y="${y}" width="${CS}" height="${CS}" fill="${cellColor}"/>`);
+      }
+    }
+  }
+  return paths.join('\n');
+}
+
+function downloadSVG() {
+  const char = CHARSET[state.currentCharIdx];
+  const glyph = state.glyphs[char];
+  const { rows, cols, gutterX, gutterY } = state;
+  const CS = 50;
+  const W = cols * CS + (cols-1) * gutterX;
+  const H = rows * CS + (rows-1) * gutterY;
+  const paths = glyphToSVGPaths(glyph, state);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n${paths}\n</svg>`;
+  const blob = new Blob([svg], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `glyph-${char === '/' ? 'slash' : char}.svg`; a.click();
+  URL.revokeObjectURL(url);
+  setStatus('SVG exported: ' + char);
+}
+
+// ─────────────────────────────────────────────
+//  FONT EXPORT (opentype.js)
+// ─────────────────────────────────────────────
+async function downloadFont() {
+  setStatus('Building font...');
+  if (!window.opentype) {
+    setStatus('Loading opentype.js...');
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js');
+  }
+
+  const { rows, cols, gutterX, gutterY, gridType, smooth, cellColor } = state;
+  const UNITS = 1000;
+  const CS = Math.floor(UNITS / Math.max(cols, rows) * 0.8);
+  const ASCENDER = UNITS * 0.8;
+  const DESCENDER = -UNITS * 0.2;
+  const UPM = 1000;
+
+  const notdefGlyph = new opentype.Glyph({
+    name: '.notdef', unicode: 0,
+    advanceWidth: CS * cols + (cols-1)*gutterX + CS*0.2,
+    path: new opentype.Path()
+  });
+
+  const glyphList = [notdefGlyph];
+
+  const drawnChars = CHARSET.filter(c =>
+    state.glyphs[c] && state.glyphs[c].some(row => row.some(v=>v))
+  );
+
+  for (const char of drawnChars) {
+    const glyph = state.glyphs[char];
+    const path = new opentype.Path();
+    const charW = cols * CS + (cols-1) * gutterX;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!glyph[r]?.[c]) continue;
+        const x = c * (CS + gutterX);
+        const yTop = ASCENDER - r * (CS + gutterY);
+        const yBot = yTop - CS;
+        const cx = x + CS / 2;
+        const cy = yBot + CS / 2;
+
+        if (gridType === 'circle') {
+          // Approximate circle with 4 cubic bezier curves
+          const R = CS / 2;
+          const K = R * 0.5523;
+          path.moveTo(cx, yBot);
+          path.bezierCurveTo(cx+K, yBot, x+CS, cy-K, x+CS, cy);
+          path.bezierCurveTo(x+CS, cy+K, cx+K, yTop, cx, yTop);
+          path.bezierCurveTo(cx-K, yTop, x, cy+K, x, cy);
+          path.bezierCurveTo(x, cy-K, cx-K, yBot, cx, yBot);
+          path.close();
+        } else if (gridType === 'diamond') {
+          path.moveTo(cx, yBot);
+          path.lineTo(x+CS, cy);
+          path.lineTo(cx, yTop);
+          path.lineTo(x, cy);
+          path.close();
+        } else if (gridType === 'cross') {
+          const off = CS * 0.35;
+          path.moveTo(x+off, yBot);
+          path.lineTo(x+CS-off, yBot);
+          path.lineTo(x+CS-off, yBot+off);
+          path.lineTo(x+CS, yBot+off);
+          path.lineTo(x+CS, yTop-off);
+          path.lineTo(x+CS-off, yTop-off);
+          path.lineTo(x+CS-off, yTop);
+          path.lineTo(x+off, yTop);
+          path.lineTo(x+off, yTop-off);
+          path.lineTo(x, yTop-off);
+          path.lineTo(x, yBot+off);
+          path.lineTo(x+off, yBot+off);
+          path.close();
+        } else if (gridType === 'star4') {
+          const outer = CS / 2;
+          const inner = CS * (0.18 + smooth / 100 * 0.25);
+          for (let i = 0; i < 8; i++) {
+            const a = (i * Math.PI / 4) - Math.PI / 2;
+            const rad = i % 2 === 0 ? outer : inner;
+            const px2 = cx + Math.cos(a) * rad;
+            const py2 = cy + Math.sin(a) * rad;
+            i === 0 ? path.moveTo(px2, py2) : path.lineTo(px2, py2);
+          }
+          path.close();
+        } else {
+          // rect (with optional rounding)
+          const rr = smooth / 100 * CS * 0.45;
+          if (rr < 2) {
+            path.moveTo(x, yBot); path.lineTo(x+CS, yBot);
+            path.lineTo(x+CS, yTop); path.lineTo(x, yTop); path.close();
+          } else {
+            const k = 0.5523 * rr;
+            path.moveTo(x+rr, yBot); path.lineTo(x+CS-rr, yBot);
+            path.bezierCurveTo(x+CS-rr+k, yBot, x+CS, yBot+rr-k, x+CS, yBot+rr);
+            path.lineTo(x+CS, yTop-rr);
+            path.bezierCurveTo(x+CS, yTop-rr+k, x+CS-rr+k, yTop, x+CS-rr, yTop);
+            path.lineTo(x+rr, yTop);
+            path.bezierCurveTo(x+rr-k, yTop, x, yTop-rr+k, x, yTop-rr);
+            path.lineTo(x, yBot+rr);
+            path.bezierCurveTo(x, yBot+rr-k, x+rr-k, yBot, x+rr, yBot);
+            path.close();
+          }
+        }
+      }
+    }
+
+    const g = new opentype.Glyph({
+      name: 'uni' + char.charCodeAt(0).toString(16).padStart(4,'0'),
+      unicode: char.charCodeAt(0),
+      advanceWidth: charW + CS * 0.2,
+      path: path
+    });
+    glyphList.push(g);
+  }
+
+  if (glyphList.length <= 1) {
+    setStatus('No glyphs drawn yet! Draw some characters first.');
+    return;
+  }
+
+  const font = new opentype.Font({
+    familyName: 'GridType',
+    styleName: 'Regular',
+    unitsPerEm: UPM,
+    ascender: ASCENDER,
+    descender: DESCENDER,
+    glyphs: glyphList
+  });
+
+  font.download('GridType.otf');
+  setStatus(`Font exported: ${glyphList.length-1} glyphs`);
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+// ─────────────────────────────────────────────
+//  BUILD CHARACTER GRID (right panel)
+// ─────────────────────────────────────────────
+const LATIN_GROUPS = [
+  { label: 'Uppercase', chars: CHARSET_LATIN.slice(0, 26) },
+  { label: 'Lowercase', chars: CHARSET_LATIN.slice(26, 52) },
+  { label: 'Numbers',   chars: CHARSET_LATIN.slice(52, 62) },
+  { label: 'Symbols',   chars: CHARSET_LATIN.slice(62) },
+];
+
+const KOREAN_GROUPS = [
+  { label: '기본자음', chars: 'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ'.split('') },
+  { label: '쌍자음',   chars: 'ㄲㄸㅃㅆㅉ'.split('') },
+  { label: '겹받침',   chars: 'ㄳㄵㄶㄺㄻㄼㄽㄾㄿㅀㅄ'.split('') },
+  { label: '기본모음', chars: 'ㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣ'.split('') },
+  { label: '복합모음', chars: 'ㅐㅒㅔㅖㅘㅙㅚㅝㅞㅟㅢ'.split('') },
+];
+
+let activeTab = 'latin';
+
+function makeCharCell(char, idx) {
+  const cell = document.createElement('div');
+  cell.className = 'char-cell' + (idx === state.currentCharIdx ? ' active' : '');
+  cell.dataset.char = char;
+  const cnv = document.createElement('canvas');
+  cell.appendChild(cnv);
+  const label = document.createElement('span');
+  label.className = 'char-cell-label';
+  label.textContent = char;
+  cell.appendChild(label);
+  cell.addEventListener('click', () => {
+    state.currentCharIdx = idx;
+    document.getElementById('current-char-display').textContent = char;
+    ensureGlyphSize();
+    resizeCanvas();
+    renderMainCanvas(null);
+    updateActiveCharCell();
+    setStatus('Editing: ' + char);
+  });
+  return cell;
+}
+
+function makeGroupLabel(text, count) {
+  const div = document.createElement('div');
+  div.className = 'char-group-label';
+  div.textContent = text;
+  const span = document.createElement('span');
+  span.className = 'char-group-count';
+  span.textContent = count;
+  div.appendChild(span);
+  return div;
+}
+
+function buildLatinGrid() {
+  const grid = document.getElementById('char-grid');
+  grid.innerHTML = '';
+  let offset = 0;
+  LATIN_GROUPS.forEach(group => {
+    grid.appendChild(makeGroupLabel(group.label, group.chars.length));
+    group.chars.forEach(char => {
+      grid.appendChild(makeCharCell(char, offset++));
+    });
+  });
+  setTimeout(() => {
+    document.querySelectorAll('#char-grid .char-cell').forEach(cell => {
+      const cnv = cell.querySelector('canvas');
+      if (cnv) renderThumbnail(cell.dataset.char, cnv);
+    });
+  }, 0);
+}
+
+function buildKoreanGrid() {
+  const grid = document.getElementById('char-grid');
+  grid.innerHTML = '';
+  let offset = CHARSET_LATIN.length;
+  KOREAN_GROUPS.forEach(group => {
+    grid.appendChild(makeGroupLabel(group.label, group.chars.length));
+    group.chars.forEach(char => {
+      const globalIdx = offset++;
+      grid.appendChild(makeCharCell(char, globalIdx));
+    });
+  });
+  setTimeout(() => {
+    document.querySelectorAll('#char-grid .char-cell').forEach(cell => {
+      const cnv = cell.querySelector('canvas');
+      if (cnv) renderThumbnail(cell.dataset.char, cnv);
+    });
+  }, 0);
+}
+
+function buildCharGrid() {
+  activeTab === 'latin' ? buildLatinGrid() : buildKoreanGrid();
+}
+
+function switchCharTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-latin').classList.toggle('active', tab === 'latin');
+  document.getElementById('tab-korean').classList.toggle('active', tab === 'korean');
+  buildCharGrid();
+  updateGlyphCount();
+}
+
+// ─────────────────────────────────────────────
+//  KEYBOARD
+// ─────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomIn(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoomOut(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); resetZoom(); return; }
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight') { nextChar(); return; }
+  if (e.key === 'ArrowLeft') { prevChar(); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { clearGlyph(); return; }
+  const idx = CHARSET.indexOf(e.key);
+  if (idx >= 0) {
+    state.currentCharIdx = idx;
+    document.getElementById('current-char-display').textContent = e.key;
+    ensureGlyphSize();
+    resizeCanvas();
+    renderMainCanvas(null);
+    updateActiveCharCell();
+    setStatus('Editing: ' + e.key);
+  }
+});
+
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
+function init() {
+  buildCharGrid();
+
+  const restored = autoLoad();
+
+  document.getElementById('theme-toggle').innerHTML = SVG_MOON;
+  resizeCanvas();
+  renderMainCanvas(null);
+  applyZoom();
+
+  setTimeout(() => {
+    renderAllThumbnails();
+    renderPreview();
+    if (restored) {
+      setStatus('已恢复上次进度 · 继续创作吧');
+    } else {
+      setStatus('点击格子开始绘制字形');
+    }
+  }, 100);
+}
+
+init();
+</script>
+</body>
+</html>
