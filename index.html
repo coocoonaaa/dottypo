@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dottypo</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="logo-dot">dot</span><span class="logo-typo">typo</span></div>
+  <div style="width:1px;height:18px;background:var(--border);"></div>
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="btn-mode-grid" onclick="switchMode('grid')">Grid</button>
+    <button class="mode-btn" id="btn-mode-pixel" onclick="switchMode('pixel')">Pixel</button>
+  </div>
+  <div style="width:1px;height:18px;background:var(--border);"></div>
+  <div class="header-tools">
+    <button class="btn" onclick="randomizeGlyph()">Random</button>
+    <button class="btn" onclick="toggleGrid()">Grid</button>
+    <button class="btn danger" onclick="clearGlyph()">Clear</button>
+    <div style="width:1px;height:18px;background:var(--border);"></div>
+    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:0.06em;margin-right:auto;" id="status-bar">Ready</div>
+    
+    <div class="file-mgmt">
+      <span id="current-doc-name" style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;color:var(--text);margin-right:8px;">Untitled</span>
+      <button class="btn" onclick="saveCurrentDoc()">Save</button>
+      <button class="btn" onclick="openDocManager()">File</button>
+      <button class="btn" onclick="openNewFileModal()">New</button>
+    </div>
+
+    <button class="btn" id="btn-preview" onclick="togglePreview()">Preview</button>
+    <div style="width:1px;height:18px;background:var(--border);"></div>
+    <button class="btn primary" onclick="downloadSVG()">SVG</button>
+    <button class="btn primary" onclick="downloadPNG()">PNG</button>
+    <button class="btn primary" onclick="openFontExportModal()">Font ↓</button>
+
+    <div style="width:1px;height:18px;background:var(--border);"></div>
+    <button id="auth-btn" class="btn" onclick="openAuthModal()">Login</button>
+    <div id="user-info" style="display:none;align-items:center;position:relative;">
+      <div class="user-avatar" id="user-avatar-btn" onclick="toggleUserDropdown()">U</div>
+      <div id="user-dropdown" class="user-dropdown">
+        <div class="user-dropdown-info">
+          <div class="user-dropdown-name-row">
+            <span class="user-dropdown-name" id="dropdown-username">—</span>
+            <span class="sub-badge free" id="dropdown-plan-badge">FREE</span>
+          </div>
+          <div class="user-dropdown-email" id="dropdown-email">—</div>
+        </div>
+        <div class="user-dropdown-divider"></div>
+        <div id="dropdown-sub-section">
+          <button class="user-dropdown-btn upgrade-btn" onclick="openSubscriptionModal()">✦ Upgrade to Pro</button>
+          <div class="user-dropdown-divider"></div>
+        </div>
+        <div id="dropdown-pro-section" style="display:none">
+          <div class="user-dropdown-expiry" id="dropdown-expiry-text">—</div>
+          <button class="user-dropdown-btn manage-btn" onclick="openSubscriptionModal()">Manage Subscription</button>
+          <div class="user-dropdown-divider"></div>
+        </div>
+        <button class="user-dropdown-btn" onclick="signOut()">Sign Out</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="workspace">
+
+  <!-- LEFT PANEL -->
+  <div class="left-panel">
+
+    <!-- ── GRID PANEL ── -->
+    <div class="grid-panel">
+      <div class="panel-section">
+        <div class="panel-label">Grid Style</div>
+        <div class="grid-type-btns">
+          <button class="grid-type-btn active" onclick="setGridType('rectangular')" data-type="rectangular">
+            <span class="grid-type-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
+            </span>Rectangular
+          </button>
+          <button class="grid-type-btn" onclick="setGridType('polar')" data-type="polar">
+            <span class="grid-type-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
+            </span>Polar
+          </button>
+          <button class="grid-type-btn" onclick="setGridType('triangular')" data-type="triangular">
+            <span class="grid-type-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16"><polygon points="8,2 14,12 2,12" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="8,14 14,4 2,4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </span>Triangular
+          </button>
+          <button class="grid-type-btn" onclick="setGridType('organic')" data-type="organic">
+            <span class="grid-type-icon">
+              <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 4 Q 8 2 13 4 T 14 12 Q 8 14 3 11 T 3 4 Z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 8 Q 8 9 13 8 M 8 3 Q 7 8 8 13" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </span>Organic
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-section" id="section-diagonal" style="display:none">
+        <div class="panel-label">Diagonal Style</div>
+        <div class="sub-mode-btns" id="toggle-diagonal">
+          <button class="sub-mode-btn active" data-val="Left" onclick="updateGridSpecificParam('diagonal', 'Left')">
+            <span class="grid-type-icon"><svg width="14" height="14" viewBox="0 0 16 16"><line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.5"/></svg></span>Left (/)
+          </button>
+          <button class="sub-mode-btn" data-val="Right" onclick="updateGridSpecificParam('diagonal', 'Right')">
+            <span class="grid-type-icon"><svg width="14" height="14" viewBox="0 0 16 16"><line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/></svg></span>Right (\)
+          </button>
+          <button class="sub-mode-btn" data-val="Both" onclick="updateGridSpecificParam('diagonal', 'Both')">
+            <span class="grid-type-icon"><svg width="14" height="14" viewBox="0 0 16 16"><line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.5"/></svg></span>Both (X)
+          </button>
+          <button class="sub-mode-btn" data-val="isoH" onclick="updateGridSpecificParam('diagonal', 'isoH')">
+            <span class="grid-type-icon"><svg width="14" height="14" viewBox="0 0 16 16"><line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="4" y1="4" x2="8" y2="8" stroke="currentColor" stroke-width="1.2"/><line x1="12" y1="4" x2="8" y2="8" stroke="currentColor" stroke-width="1.2"/></svg></span>Iso Horizontal
+          </button>
+          <button class="sub-mode-btn" data-val="isoV" onclick="updateGridSpecificParam('diagonal', 'isoV')">
+            <span class="grid-type-icon"><svg width="14" height="14" viewBox="0 0 16 16"><line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/><line x1="4" y1="6" x2="8" y2="10" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="14" x2="8" y2="10" stroke="currentColor" stroke-width="1.2"/></svg></span>Iso Vertical
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-section" id="section-org-style" style="display:none">
+        <div class="panel-label">Organic Style</div>
+        <div class="sub-mode-btns" id="toggle-subType">
+          <button class="sub-mode-btn active" data-val="Arc" onclick="updateGridSpecificParam('subType', 'Arc')">
+            <span class="grid-type-icon"><svg width="14" height="14" viewBox="0 0 16 16"><path d="M4,12 A8,8 0 0,1 12,4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>Arc
+          </button>
+          <button class="sub-mode-btn" data-val="Wave" onclick="updateGridSpecificParam('subType', 'Wave')">
+            <span class="grid-type-icon"><svg width="14" height="14" viewBox="0 0 16 16"><path d="M2,8 Q4,4 8,8 T14,8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>Wave
+          </button>
+          <button class="sub-mode-btn" data-val="Radial" onclick="updateGridSpecificParam('subType', 'Radial')">
+            <span class="grid-type-icon"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="1"/></svg></span>Radial
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-label">Params</div>
+        
+        <!-- Shared parameters -->
+        <div class="slider-row" id="row-rows">
+          <span class="slider-name" id="label-rows">Rows</span>
+          <input type="range" id="sl-rows" min="3" max="24" value="8" oninput="updateParam('rows',this.value)">
+          <input type="number" class="slider-input" id="v-rows" value="8" onchange="updateParam('rows',this.value)">
+        </div>
+        <div class="slider-row" id="row-cols">
+          <span class="slider-name" id="label-cols">Cols</span>
+          <input type="range" id="sl-cols" min="3" max="40" value="8" oninput="updateParam('cols',this.value)">
+          <input type="number" class="slider-input" id="v-cols" value="8" onchange="updateParam('cols',this.value)">
+        </div>
+
+        <!-- Rectangular only -->
+        <div class="slider-row" id="row-gutterX">
+          <span class="slider-name">Gutter X</span>
+          <input type="range" id="sl-gutterX" min="-20" max="10" value="0" oninput="updateParam('gutterX',this.value)">
+          <input type="number" class="slider-input" id="v-gutterX" value="0" onchange="updateParam('gutterX',this.value)">
+        </div>
+        <div class="slider-row" id="row-gutterY">
+          <span class="slider-name">Gutter Y</span>
+          <input type="range" id="sl-gutterY" min="-20" max="10" value="0" oninput="updateParam('gutterY',this.value)">
+          <input type="number" class="slider-input" id="v-gutterY" value="0" onchange="updateParam('gutterY',this.value)">
+        </div>
+        <div class="slider-row" id="row-ratio">
+          <span class="slider-name">Ratio</span>
+          <input type="range" id="sl-ratio" min="30" max="250" value="100" oninput="updateParam('ratio',this.value)">
+          <input type="number" class="slider-input" id="v-ratio" value="100" onchange="updateParam('ratio',this.value)">
+        </div>
+
+        <!-- Polar only -->
+        <div class="slider-row" id="row-innerRadius" style="display:none">
+          <span class="slider-name">Inner Rad</span>
+          <input type="range" id="sl-innerRadius" min="0" max="80" value="20" oninput="updateGridSpecificParam('innerRadius',this.value)">
+          <input type="number" class="slider-input" id="v-innerRadius" value="20" onchange="updateGridSpecificParam('innerRadius',this.value)">
+        </div>
+        <div class="slider-row" id="row-angle" style="display:none">
+          <span class="slider-name">Angle</span>
+          <input type="range" id="sl-angle" min="0" max="360" value="0" oninput="updateGridSpecificParam('angle',this.value)">
+          <input type="number" class="slider-input" id="v-angle" value="0" onchange="updateGridSpecificParam('angle',this.value)">
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-label">Color</div>
+        <div class="slider-row">
+          <span class="slider-name" style="width:auto;flex:1">Hue</span>
+          <input type="color" id="color-picker" value="#d4f04a" oninput="updateColor(this.value)"
+            style="width:32px;height:22px;border:1px solid var(--border2);border-radius:3px;background:transparent;cursor:pointer;padding:1px;">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Grid</span>
+          <input type="range" id="sl-gridOpacity" min="0" max="100" value="100" oninput="updateGridOpacity(this.value)">
+          <span class="slider-val" id="v-gridOpacity">100</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PIXEL PANEL ── -->
+    <div class="pixel-panel">
+      <div class="panel-section">
+        <div class="panel-label">Pixel Shape</div>
+        <div class="pixel-shape-grid">
+          <button class="pixel-type-btn active" onclick="setPixelType('rect')" data-type="rect" title="Rectangle">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="currentColor"/></svg>
+            <span>Rect</span>
+          </button>
+          <button class="pixel-type-btn" onclick="setPixelType('circle')" data-type="circle" title="Circle">
+            <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="currentColor"/></svg>
+            <span>Circle</span>
+          </button>
+          <button class="pixel-type-btn" onclick="setPixelType('diamond')" data-type="diamond" title="Diamond">
+            <svg width="16" height="16" viewBox="0 0 16 16"><polygon points="8,2 14,8 8,14 2,8" fill="currentColor"/></svg>
+            <span>Diamond</span>
+          </button>
+          <button class="pixel-type-btn" onclick="setPixelType('cross')" data-type="cross" title="Cross">
+            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="5" y="1" width="6" height="14" rx="1" fill="currentColor"/><rect x="1" y="5" width="14" height="6" rx="1" fill="currentColor"/></svg>
+            <span>Cross</span>
+          </button>
+          <button class="pixel-type-btn" onclick="setPixelType('star4')" data-type="star4" title="Star 4">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1 C8 5, 11 5, 15 8 C11 8, 11 11, 8 15 C8 11, 5 11, 1 8 C5 8, 5 5, 8 1Z" fill="currentColor"/></svg>
+            <span>Star 4</span>
+          </button>
+          <button class="pixel-type-btn" onclick="setPixelType('star8')" data-type="star8" title="Star 8">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8,1 L9.15,5.23 L12.95,3.05 L10.77,6.85 L15,8 L10.77,9.15 L12.95,12.95 L9.15,10.77 L8,15 L5.85,10.77 L3.05,12.95 L5.23,9.15 L1,8 L5.23,6.85 L3.05,3.05 L6.85,5.23 Z" fill="currentColor"/></svg>
+            <span>Star 8</span>
+          </button>
+          <button class="pixel-type-btn" onclick="setPixelType('ring')" data-type="ring" title="Ring">
+            <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>
+            <span>Ring</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-label">Pixel Parameters</div>
+        <div class="slider-row">
+          <span class="slider-name">Rows</span>
+          <input type="range" id="psl-rows" min="5" max="50" value="24" oninput="updatePixelParam('rows',this.value)">
+          <input type="number" class="slider-input" id="pv-rows" value="24" onchange="updatePixelParam('rows',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Cols</span>
+          <input type="range" id="psl-cols" min="5" max="50" value="16" oninput="updatePixelParam('cols',this.value)">
+          <input type="number" class="slider-input" id="pv-cols" value="16" onchange="updatePixelParam('cols',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Width</span>
+          <input type="range" id="psl-cellW" min="5" max="50" value="15" oninput="updatePixelParam('cellW',this.value)">
+          <input type="number" class="slider-input" id="pv-cellW" value="15" onchange="updatePixelParam('cellW',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Height</span>
+          <input type="range" id="psl-cellH" min="5" max="50" value="15" oninput="updatePixelParam('cellH',this.value)">
+          <input type="number" class="slider-input" id="pv-cellH" value="15" onchange="updatePixelParam('cellH',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Gap X</span>
+          <input type="range" id="psl-gapX" min="-50" max="50" value="1" oninput="updatePixelParam('gapX',this.value)">
+          <input type="number" class="slider-input" id="pv-gapX" value="1" onchange="updatePixelParam('gapX',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Gap Y</span>
+          <input type="range" id="psl-gapY" min="-50" max="50" value="1" oninput="updatePixelParam('gapY',this.value)">
+          <input type="number" class="slider-input" id="pv-gapY" value="1" onchange="updatePixelParam('gapY',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Smooth</span>
+          <input type="range" id="psl-smooth" min="0" max="100" value="0" oninput="updatePixelParam('smooth',this.value)">
+          <input type="number" class="slider-input" id="pv-smooth" value="0" onchange="updatePixelParam('smooth',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Skew</span>
+          <input type="range" id="psl-skew" min="-100" max="100" value="0" oninput="updatePixelParam('skew',this.value)">
+          <input type="number" class="slider-input" id="pv-skew" value="0" onchange="updatePixelParam('skew',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Row Shift</span>
+          <input type="range" id="psl-rowStagger" min="-50" max="50" value="0" oninput="updatePixelParam('rowStagger',this.value)">
+          <input type="number" class="slider-input" id="pv-rowStagger" value="0" onchange="updatePixelParam('rowStagger',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Col Shift</span>
+          <input type="range" id="psl-colStagger" min="-50" max="50" value="0" oninput="updatePixelParam('colStagger',this.value)">
+          <input type="number" class="slider-input" id="pv-colStagger" value="0" onchange="updatePixelParam('colStagger',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Offset X</span>
+          <input type="range" id="psl-offsetX" min="-200" max="200" value="0" oninput="updatePixelParam('offsetX',this.value)">
+          <input type="number" class="slider-input" id="pv-offsetX" value="0" onchange="updatePixelParam('offsetX',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Offset Y</span>
+          <input type="range" id="psl-offsetY" min="-200" max="200" value="0" oninput="updatePixelParam('offsetY',this.value)">
+          <input type="number" class="slider-input" id="pv-offsetY" value="0" onchange="updatePixelParam('offsetY',this.value)">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Fusion Str</span>
+          <input type="range" id="psl-fusionStr" min="0" max="100" value="50" oninput="updatePixelParam('fusionStr',this.value)">
+          <input type="number" class="slider-input" id="pv-fusionStr" value="50" onchange="updatePixelParam('fusionStr',this.value)">
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-label-row">
+          <div class="panel-label" style="margin-bottom:0">Layers</div>
+          <button class="add-layer-btn" onclick="addPixelLayer()">+</button>
+        </div>
+        <div id="pixel-layer-list"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-label">Active Layer Style</div>
+        <div class="slider-row">
+          <span class="slider-name" style="width:auto;flex:1">Color</span>
+          <input type="color" id="pixel-color-picker" value="#d4f04a" oninput="updatePixelColor(this.value)"
+            style="width:32px;height:22px;border:1px solid var(--border2);border-radius:3px;background:transparent;cursor:pointer;padding:1px;">
+        </div>
+        <div class="slider-row">
+          <span class="slider-name">Grid</span>
+          <input type="range" id="psl-gridOpacity" min="0" max="100" value="100" oninput="updateGridOpacity(this.value)">
+          <span class="slider-val" id="pv-gridOpacity">100</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CANVAS CENTER -->
+  <div class="canvas-area">
+
+    <!-- FULL PREVIEW OVERLAY -->
+    <div id="preview-overlay" class="preview-overlay">
+      <div class="preview-topbar">
+        <textarea id="preview-large-input" class="preview-large-input"
+                  placeholder="Type text…" autocomplete="off" spellcheck="false" rows="1"
+                  oninput="renderLargePreview()"></textarea>
+        <div class="preview-topbar-sep"></div>
+        <span class="preview-size-label">Size</span>
+        <input type="range" id="preview-size-slider" class="preview-size-range" min="40" max="280" value="120"
+               oninput="renderLargePreview()">
+        <span class="preview-size-val" id="preview-size-val">120</span>
+        <div class="preview-topbar-sep"></div>
+        <span class="preview-size-label">Line H</span>
+        <input type="range" id="preview-lineh-slider" class="preview-size-range" min="80" max="300" value="130"
+               oninput="renderLargePreview()">
+        <span class="preview-size-val" id="preview-lineh-val">130</span>
+        <div class="preview-topbar-sep"></div>
+        <span class="preview-size-label">Letter</span>
+        <input type="range" id="preview-lspc-slider" class="preview-size-range" min="-20" max="100" value="0"
+               oninput="renderLargePreview()">
+        <span class="preview-size-val" id="preview-lspc-val">0</span>
+        <span class="preview-esc-hint">ESC</span>
+        <button class="preview-close-btn" onclick="togglePreview()">✕</button>
+      </div>
+      <div class="preview-stage">
+        <div class="preview-canvas-scroll" id="preview-canvas-scroll">
+          <canvas id="preview-large-canvas"></canvas>
+        </div>
+        <div id="preview-empty-hint" class="preview-empty-hint">Type text above to preview your font</div>
+      </div>
+    </div>
+
+    <div class="canvas-wrapper" id="canvas-wrapper">
+      <canvas id="grid-canvas"></canvas>
+    </div>
+    <div class="canvas-bottom">
+      <div class="zoom-bar">
+        <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out (Ctrl −)">−</button>
+        <span class="zoom-display" id="zoom-display">100%</span>
+        <button class="zoom-btn" onclick="zoomIn()" title="Zoom In (Ctrl +)">+</button>
+        <button class="zoom-btn" onclick="resetZoom()" title="Reset Zoom (Ctrl 0)" style="font-family:'DM Mono',monospace;font-size:9px;width:auto;padding:0 7px;letter-spacing:0.06em;">100%</button>
+        <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
+        <button id="btn-undo" class="zoom-btn" onclick="undo()" title="Undo (Ctrl Z)" style="font-size:14px;opacity:0.35;">↩</button>
+        <button id="btn-redo" class="zoom-btn" onclick="redo()" title="Redo (Ctrl Y)" style="font-size:14px;opacity:0.35;">↪</button>
+        <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
+        <button class="zoom-btn theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Day / Night"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
+    <div class="char-grid-header">
+      <button class="char-tab active" id="tab-latin" onclick="switchCharTab('latin')">
+        Latin <span class="char-tab-count">94</span>
+      </button>
+      <button class="char-tab" id="tab-korean" onclick="switchCharTab('korean')">
+        한글 <span class="char-tab-count">51</span>
+      </button>
+      <span id="glyph-count"></span>
+    </div>
+    <div class="char-grid-scroll">
+      <div class="char-grid" id="char-grid"></div>
+    </div>
+  </div>
+
+</div>
+
+<input type="file" id="file-input" accept=".json" style="display:none" onchange="handleLoadFile(event)">
+
+<!-- ── FONT DOWNLOAD CONFIRM ── -->
+<div id="new-file-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeNewFileModal()">
+  <div class="font-confirm-box">
+    <div class="font-confirm-title">New File</div>
+    <input id="new-file-name" class="nf-input" type="text" placeholder="File name…" maxlength="40"
+      onkeydown="if(event.key==='Enter')confirmNewFile()">
+    <div class="nf-mode-row">
+      <button class="nf-mode-btn active" data-mode="grid" onclick="setNewFileMode('grid')">Grid</button>
+      <button class="nf-mode-btn" data-mode="pixel" onclick="setNewFileMode('pixel')">Pixel</button>
+    </div>
+    <div class="font-confirm-actions">
+      <button class="font-confirm-cancel" onclick="closeNewFileModal()">Cancel</button>
+      <button class="font-confirm-dl" onclick="confirmNewFile()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── FONT EXPORT MODAL ── -->
+<div id="font-export-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeFontExportModal()">
+  <div class="fex-box">
+    <div class="fex-header">
+      <span class="fex-title">Export Font</span>
+      <button class="modal-close-btn" style="position:static;margin-left:auto" onclick="closeFontExportModal()">✕</button>
+    </div>
+
+    <div class="fex-field">
+      <label class="fex-label">Filename</label>
+      <input id="font-export-name" class="fex-input" type="text" placeholder="MyFont" maxlength="60">
+    </div>
+
+    <div class="fex-field">
+      <label class="fex-label">Format</label>
+      <div class="fex-opts">
+        <button class="fopt active" data-val="otf" onclick="selectFontOpt(this,'fmt')">OTF</button>
+        <button class="fopt" data-val="ttf" onclick="selectFontOpt(this,'fmt')">TTF</button>
+      </div>
+    </div>
+
+    <div class="fex-field">
+      <label class="fex-label">Characters</label>
+      <div class="fex-opts" id="fex-chars-opts">
+        <button class="fopt active" data-val="designed" onclick="selectFontOpt(this,'chars')">Designed only</button>
+        <button class="fopt" data-val="latin" onclick="selectFontOpt(this,'chars')">Latin</button>
+        <button class="fopt" data-val="korean" onclick="selectFontOpt(this,'chars')">Korean</button>
+        <button class="fopt" data-val="all" onclick="selectFontOpt(this,'chars')">All</button>
+      </div>
+    </div>
+
+    <div class="fex-info" id="font-export-info">—</div>
+
+    <div class="fex-actions">
+      <button class="font-confirm-cancel" onclick="closeFontExportModal()">Cancel</button>
+      <button class="font-confirm-dl" onclick="doFontExport()">Download</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── AUTH MODAL ── -->
+<div id="auth-modal" class="modal-overlay" onclick="if(event.target===this)closeAuthModal()">
+  <div class="modal-box">
+    <button class="modal-close-btn" onclick="closeAuthModal()">✕</button>
+    <div class="modal-logo"><span class="logo-dot">dot</span><span class="logo-typo">typo</span></div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="auth-tab-login" onclick="switchAuthTab('login')">Login</button>
+      <button class="auth-tab" id="auth-tab-register" onclick="switchAuthTab('register')">Register</button>
+    </div>
+    <div class="auth-fields">
+      <input type="text" id="auth-username" class="auth-input" placeholder="Username" autocomplete="username" style="display:none">
+      <input type="text" id="auth-email" class="auth-input" placeholder="Email or username" autocomplete="email">
+      <input type="password" id="auth-password" class="auth-input" placeholder="Password (min 6 chars)" autocomplete="current-password">
+      <div id="auth-error" class="auth-error"></div>
+      <button class="btn primary auth-submit-btn" id="auth-label" onclick="handleAuthSubmit()">Login</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SUBSCRIPTION MODAL ── -->
+<div id="sub-modal" class="modal-overlay" onclick="if(event.target===this)closeSubscriptionModal()">
+  <div class="sub-modal-box">
+    <button class="modal-close-btn" onclick="closeSubscriptionModal()">✕</button>
+    <div class="sub-modal-header">
+      <div class="sub-modal-title"><span class="sub-title-dot">dot</span>typo Pro</div>
+      <div id="sub-current-status" class="sub-current-status"></div>
+    </div>
+    <!-- Pro management panel (shown when user is Pro) -->
+    <div id="sub-manage-panel" style="display:none">
+      <div class="sub-manage-info">
+        <div class="sub-manage-days-row">
+          <span class="sub-manage-days-num" id="sub-manage-days">—</span>
+          <span class="sub-manage-days-label">days remaining</span>
+        </div>
+        <div class="sub-manage-row">
+          <span class="sub-manage-label">Plan</span>
+          <span class="sub-manage-val" id="sub-manage-plan">—</span>
+        </div>
+        <div class="sub-manage-row">
+          <span class="sub-manage-label">Expires</span>
+          <span class="sub-manage-val" id="sub-manage-expiry">—</span>
+        </div>
+      </div>
+      <button class="btn primary" id="sub-renew-btn" onclick="renewSubscription()">Renew Now</button>
+      <p class="sub-manage-note">Subscriptions are not auto-renewed. Please renew manually before expiry.</p>
+    </div>
+    <div id="sub-plans" class="sub-plans">
+      <!-- Free -->
+      <div class="sub-plan-card">
+        <div class="sub-plan-name">Free</div>
+        <div class="sub-plan-price">₩0</div>
+        <ul class="sub-plan-features">
+          <li>Grid &amp; Pixel modes</li>
+          <li>SVG export</li>
+          <li>Up to 5 cloud documents</li>
+          <li class="feat-disabled">Font file download (.otf)</li>
+          <li class="feat-disabled">Unlimited cloud documents</li>
+        </ul>
+      </div>
+      <!-- Pro -->
+      <div class="sub-plan-card pro">
+        <div class="sub-plan-name">Pro</div>
+        <div class="sub-plan-tab-row">
+          <button class="sub-tab active" data-plan="monthly" onclick="selectPlanTab('monthly')">Monthly</button>
+          <button class="sub-tab" data-plan="yearly" onclick="selectPlanTab('yearly')">Yearly <span class="sub-save-tag">−17%</span></button>
+        </div>
+        <div class="sub-plan-price" id="sub-pro-price">₩5,000<span>/mo</span></div>
+        <ul class="sub-plan-features">
+          <li>Grid &amp; Pixel modes</li>
+          <li>SVG export</li>
+          <li class="feat-divider"></li>
+          <li class="feat-pro">Font file download (.otf)</li>
+          <li class="feat-pro">Unlimited cloud documents</li>
+        </ul>
+        <button class="btn primary sub-cta-btn" id="sub-cta-btn" onclick="startTossPayment()">Subscribe</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DOCUMENT MANAGER OVERLAY ── -->
+<div id="doc-manager" class="doc-manager-overlay" onclick="if(event.target===this)closeDocManager()">
+  <div class="doc-manager-panel">
+    <div class="doc-manager-header">
+      <span class="doc-manager-title">My Files</span>
+      <button class="doc-close-btn" onclick="closeDocManager()">✕</button>
+    </div>
+    <div id="doc-list" class="doc-list"></div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

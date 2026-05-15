@@ -2,10 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Static HTML",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "/Users/luoxuan/Downloads", "-p", "3000"],
-      "port": 3000
+      "name": "dottypo Dev",
+      "runtimeExecutable": "node_modules/.bin/vite",
+      "runtimeArgs": ["--host", "127.0.0.1", "--port", "5174"],
+      "port": 5174,
+      "autoPort": false,
+      "cwd": "/Users/luoxuan/Desktop/dottypo 5:9"
     }
   ]
 }

@@ -1,0 +1,3076 @@
+import './style.css'
+import { supabase } from './supabase.js'
+
+// ─────────────────────────────────────────────
+//  AUTH STATE
+// ─────────────────────────────────────────────
+let currentUser = null
+let currentProfile = null
+let currentCloudDocId = null
+let autoSaveTimer = null
+
+// ─────────────────────────────────────────────
+//  THEMES
+// ─────────────────────────────────────────────
+const THEMES = {
+  light: {
+    canvasBg:        'transparent',
+    thumbnailBg:     '#ffffff',
+    placeholderText: 'rgba(0,0,0,0.25)',
+    hoverFill:       'rgba(61,110,0,0.08)',
+    hoverStroke:     'rgba(61,110,0,0.32)',
+    gridLine:        'rgba(0,0,0,0.13)',
+  },
+  dark: {
+    canvasBg:        '#0f0f0d',
+    thumbnailBg:     '#222220',
+    placeholderText: 'rgba(255,255,255,0.22)',
+    hoverFill:       'rgba(212,240,74,0.18)',
+    hoverStroke:     'rgba(212,240,74,0.4)',
+    gridLine:        'rgba(255,255,255,0.22)',
+  }
+}
+let currentTheme = 'light'
+
+const SVG_MOON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`
+const SVG_SUN  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="7.05" y2="7.05"/><line x1="16.95" y1="16.95" x2="19.07" y2="19.07"/><line x1="4.93" y1="19.07" x2="7.05" y2="16.95"/><line x1="16.95" y1="7.05" x2="19.07" y2="4.93"/></svg>`
+
+// ─────────────────────────────────────────────
+//  CHARSETS
+// ─────────────────────────────────────────────
+const CHARSET_LATIN  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?@&-_:;"\'()[]{}#$%/\\+*=<>~|^`'.split('')
+const CHARSET_KOREAN = 'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎㄲㄸㅃㅆㅉㄳㄵㄶㄺㄻㄼㄽㄾㄿㅀㅄㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣㅐㅒㅔㅖㅘㅙㅚㅝㅞㅟㅢ'.split('')
+const CHARSET = [...CHARSET_LATIN, ...CHARSET_KOREAN]
+
+// ─────────────────────────────────────────────
+//  MODE & SHARED NAV
+// ─────────────────────────────────────────────
+let currentMode = 'grid'
+let currentCharIdx = 0
+let gridDocName = 'Untitled'
+let pixelDocName = 'Untitled'
+
+function getCurrentDocName() {
+  return currentMode === 'grid' ? gridDocName : pixelDocName
+}
+function setCurrentDocName(val) {
+  if (currentMode === 'grid') gridDocName = val; else pixelDocName = val
+}
+
+// ─────────────────────────────────────────────
+//  GRID STATE
+// ─────────────────────────────────────────────
+function makeGlyphStore() {
+  const g = {}
+  CHARSET.forEach(c => { g[c] = null })
+  return g
+}
+
+const GRID_TYPES = ['rectangular', 'polar', 'triangular', 'organic']
+
+const state = {
+  rows: 8, cols: 8, gutterX: 0, gutterY: 0,
+  ratio: 100,
+  gridType: 'rectangular', cellColor: '#000000',
+  showGrid: true, gridOpacity: 1, zoom: 1.0,
+  glyphsByType: {
+    rectangular: makeGlyphStore(),
+    polar:       makeGlyphStore(),
+    triangular:  makeGlyphStore(),
+    organic:     makeGlyphStore()
+  },
+  polar: { innerRadius: 20, angle: 0 },
+  triangular: { diagonal: 'Left' },
+  organic: { subType: 'Wave' }
+}
+
+function gridGlyphs() { return state.glyphsByType[state.gridType] }
+
+function ensureGlyphStores() {
+  GRID_TYPES.forEach(t => {
+    if (!state.glyphsByType[t]) state.glyphsByType[t] = makeGlyphStore()
+    CHARSET.forEach(c => { if (!(c in state.glyphsByType[t])) state.glyphsByType[t][c] = null })
+  })
+}
+
+// ─────────────────────────────────────────────
+//  PIXEL STATE
+// ─────────────────────────────────────────────
+function makePixelLayer(name = 'Layer 1', shape = 'rect', color = '#000000', params = {}) {
+  const layer = {
+    id: Date.now() + Math.random(), name, shape, color, opacity: 1.0, visible: true,
+    rows: params.rows ?? 24, cols: params.cols ?? 16,
+    cellW: params.cellW ?? 15, cellH: params.cellH ?? 15,
+    gapX: params.gapX ?? 1, gapY: params.gapY ?? 1,
+    smooth: params.smooth ?? 0, skew: params.skew ?? 0,
+    rowStagger: params.rowStagger ?? 0, colStagger: params.colStagger ?? 0,
+    offsetX: params.offsetX ?? 0, offsetY: params.offsetY ?? 0,
+    fusion: params.fusion ?? false, fusionStr: params.fusionStr ?? 50,
+    glyphs: {}
+  }
+  CHARSET.forEach(c => { layer.glyphs[c] = null })
+  return layer
+}
+
+const pixelState = {
+  showGrid: true, gridOpacity: 1, zoom: 1.0,
+  layers: null, activeLayerIdx: 0
+}
+pixelState.layers = [makePixelLayer()]
+
+// ─────────────────────────────────────────────
+//  CANVAS
+// ─────────────────────────────────────────────
+const canvas = document.getElementById('grid-canvas')
+const ctx = canvas.getContext('2d')
+const CELL_SIZE  = 33   // grid mode fixed cell height (70% of 47)
+const CANVAS_PAD = 24   // grid mode padding
+const PIXEL_PAD  = 16   // pixel mode padding
+let isDragging = false, dragMode = null
+
+// ─────────────────────────────────────────────
+//  UNDO
+// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+//  UNDO / REDO
+// ─────────────────────────────────────────────
+const undoStack = []
+const redoStack = []
+const MAX_HISTORY = 50
+let _historyPending = false
+
+document.addEventListener('mouseup', () => { _historyPending = false })
+
+function captureState() {
+  return currentMode === 'grid'
+    ? { mode: 'grid', charIdx: currentCharIdx, data: JSON.parse(JSON.stringify(state)) }
+    : { mode: 'pixel', charIdx: currentCharIdx, data: JSON.parse(JSON.stringify(pixelState)) }
+}
+
+function pushHistory() {
+  if (_historyPending) return
+  _historyPending = true
+  undoStack.push(captureState())
+  if (undoStack.length > MAX_HISTORY) undoStack.shift()
+  redoStack.length = 0
+  updateUndoRedoBtns()
+}
+
+function applySnapshot(snap) {
+  if (snap.mode !== currentMode) switchMode(snap.mode)
+  currentCharIdx = snap.charIdx
+  if (snap.mode === 'grid') {
+    Object.assign(state, snap.data)
+    gridSyncSliders(); setGridType(state.gridType)
+  } else {
+    Object.assign(pixelState, snap.data)
+    pixelSyncSliders()
+  }
+  updateActiveCharCell()
+  resizeCanvas(); renderMainCanvas(hoveredCell); renderAllThumbnails(); renderPreview()
+}
+
+function undo() {
+  if (!undoStack.length) return
+  redoStack.push(captureState())
+  applySnapshot(undoStack.pop())
+  setStatus('Undo')
+  updateUndoRedoBtns()
+}
+
+function redo() {
+  if (!redoStack.length) return
+  undoStack.push(captureState())
+  applySnapshot(redoStack.pop())
+  setStatus('Redo')
+  updateUndoRedoBtns()
+}
+
+function updateUndoRedoBtns() {
+  const u = document.getElementById('btn-undo')
+  const r = document.getElementById('btn-redo')
+  if (u) u.style.opacity = undoStack.length ? '1' : '0.35'
+  if (r) r.style.opacity = redoStack.length ? '1' : '0.35'
+}
+
+// ─────────────────────────────────────────────
+//  GRID LAYOUT
+// ─────────────────────────────────────────────
+let gridPaths = []
+
+function getGridActualCols() {
+  if (state.gridType === 'triangular') {
+    const d = state.triangular.diagonal
+    if (d === 'Both') return state.cols * 4
+    if (d === 'isoH') return state.cols * 2 + 1  // up+down triangles per row
+    if (d === 'isoV') return state.cols * 2 + 1  // left+right triangles per col
+    return state.cols * 2
+  }
+  return state.cols
+}
+
+// All grid types use the same logical bounding box: cols*CELL_SIZE x rows*CELL_SIZE
+// Everything is drawn inside this box, then centered on the canvas.
+const GRID_LOGICAL_W = () => state.cols * CELL_SIZE * (state.ratio / 100)
+const GRID_LOGICAL_H = () => state.rows * CELL_SIZE
+
+function gridGetCanvasSize() {
+  const lw = GRID_LOGICAL_W(), lh = GRID_LOGICAL_H()
+  return { w: lw + CANVAS_PAD * 2, h: lh + CANVAS_PAD * 2 }
+}
+
+// Compute the translate offset to center the logical grid on the canvas
+function gridGetOffset() {
+  return { ox: CANVAS_PAD, oy: CANVAS_PAD }
+}
+
+function gridBuildPaths() {
+  gridPaths = []
+  const { rows, cols, gutterX, gutterY, ratio, gridType, polar, triangular, organic } = state
+  const cw = CELL_SIZE * ratio / 100
+  const lw = GRID_LOGICAL_W(), lh = GRID_LOGICAL_H()
+  const actualCols = getGridActualCols()
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < actualCols; c++) {
+      const p = new Path2D()
+
+      if (gridType === 'polar') {
+        // Fit the polar grid inside the logical bounding box
+        const cx = lw / 2, cy = lh / 2
+        const maxR = Math.min(lw, lh) / 2
+        const innerFrac = polar.innerRadius / 100  // 0..0.8
+        const innerR = maxR * innerFrac
+        const usableR = maxR - innerR
+        const dr = usableR / rows
+        const rIn  = innerR + r * dr
+        const rOut = innerR + (r + 1) * dr
+        const da = (Math.PI * 2) / cols
+        const angleOffset = (polar.angle || 0) * Math.PI / 180
+        const startA = c * da - Math.PI / 2 + angleOffset
+        const endA   = (c + 1) * da - Math.PI / 2 + angleOffset
+        p.arc(cx, cy, rOut, startA, endA)
+        p.arc(cx, cy, rIn,  endA, startA, true)
+        p.closePath()
+      }
+      else if (gridType === 'triangular') {
+        const { diagonal } = triangular
+
+        if (diagonal === 'isoH') {
+          // Horizontal isometric: staggered rows, triH=CELL_SIZE to fill bounding box vertically
+          const triW = cw
+          const triH = CELL_SIZE
+          const halfW = triW / 2
+          const triIdx = c
+          const rowOffset = (r % 2 === 0) ? 0 : halfW
+          const xLeft = triIdx * halfW + rowOffset - halfW
+          const yTop  = r * triH
+          const yBot  = yTop + triH
+          const xMid  = xLeft + halfW
+          const xRight= xLeft + triW
+          if (triIdx % 2 === 0) {
+            p.moveTo(xLeft, yBot); p.lineTo(xRight, yBot); p.lineTo(xMid, yTop)
+          } else {
+            p.moveTo(xLeft, yTop); p.lineTo(xRight, yTop); p.lineTo(xMid, yBot)
+          }
+          p.closePath()
+        }
+        else if (diagonal === 'isoV') {
+          // Vertical isometric: staggered columns, triW=cw to fill bounding box horizontally
+          const triW = cw
+          const triH = CELL_SIZE
+          const halfH = triH / 2
+          const rectC = Math.floor(c / 2)
+          const colStagger = (c % 2 === 0) ? 0 : halfH
+          const xLeft  = rectC * triW
+          const xRight = xLeft + triW
+          const yTop   = r * CELL_SIZE + colStagger - halfH
+          const yMid   = yTop + halfH
+          const yBot   = yTop + triH
+          if ((r + c) % 2 === 0) {
+            p.moveTo(xLeft, yTop); p.lineTo(xLeft, yBot); p.lineTo(xRight, yMid)
+          } else {
+            p.moveTo(xRight, yTop); p.lineTo(xRight, yBot); p.lineTo(xLeft, yMid)
+          }
+          p.closePath()
+        }
+        else if (diagonal === 'Both') {
+          const rectC = Math.floor(c / 4), subIdx = c % 4
+          const bx = rectC * cw, by = r * CELL_SIZE
+          const mx = bx + cw / 2, my = by + CELL_SIZE / 2
+          if (subIdx === 0) { p.moveTo(bx,by); p.lineTo(bx+cw,by); p.lineTo(mx,my) }
+          if (subIdx === 1) { p.moveTo(bx+cw,by); p.lineTo(bx+cw,by+CELL_SIZE); p.lineTo(mx,my) }
+          if (subIdx === 2) { p.moveTo(bx+cw,by+CELL_SIZE); p.lineTo(bx,by+CELL_SIZE); p.lineTo(mx,my) }
+          if (subIdx === 3) { p.moveTo(bx,by+CELL_SIZE); p.lineTo(bx,by); p.lineTo(mx,my) }
+          p.closePath()
+        } else {
+          const rectC = Math.floor(c / 2), subIdx = c % 2
+          const bx = rectC * cw, by = r * CELL_SIZE
+          if (diagonal === 'Left') {
+            if (subIdx === 0) { p.moveTo(bx,by); p.lineTo(bx+cw,by); p.lineTo(bx,by+CELL_SIZE) }
+            if (subIdx === 1) { p.moveTo(bx+cw,by); p.lineTo(bx+cw,by+CELL_SIZE); p.lineTo(bx,by+CELL_SIZE) }
+          } else if (diagonal === 'Right') {
+            if (subIdx === 0) { p.moveTo(bx,by); p.lineTo(bx+cw,by); p.lineTo(bx+cw,by+CELL_SIZE) }
+            if (subIdx === 1) { p.moveTo(bx,by); p.lineTo(bx+cw,by+CELL_SIZE); p.lineTo(bx,by+CELL_SIZE) }
+          }
+          p.closePath()
+        }
+      }
+      else if (gridType === 'organic') {
+        const { subType } = organic
+        const bx = c * cw, by = r * CELL_SIZE
+        if (subType === 'Arc') {
+          // Corner-anchored arcs fitting inside the logical box
+          const maxR = Math.max(lw, lh)
+          const dr = maxR / rows
+          const rIn  = r * dr, rOut = (r + 1) * dr
+          const da = (Math.PI / 2) / cols
+          const startA = c * da, endA = (c + 1) * da
+          p.arc(0, lh, rOut, -Math.PI/2 + startA, -Math.PI/2 + endA)
+          p.arc(0, lh, rIn,  -Math.PI/2 + endA, -Math.PI/2 + startA, true)
+          p.closePath()
+        } else if (subType === 'Wave') {
+          const wave = (px, py) => ({ dx: Math.sin(py * 0.08) * cw * 0.25, dy: Math.cos(px * 0.08) * CELL_SIZE * 0.25 })
+          const v1 = wave(bx,by), v2 = wave(bx+cw,by), v3 = wave(bx+cw,by+CELL_SIZE), v4 = wave(bx,by+CELL_SIZE)
+          p.moveTo(bx+v1.dx, by+v1.dy); p.lineTo(bx+cw+v2.dx, by+v2.dy)
+          p.lineTo(bx+cw+v3.dx, by+CELL_SIZE+v3.dy); p.lineTo(bx+v4.dx, by+CELL_SIZE+v4.dy)
+          p.closePath()
+        } else if (subType === 'Radial') {
+          const gcx = lw / 2, gcy = lh / 2
+          const distort = (px, py) => {
+            const dx = px - gcx, dy = py - gcy
+            const dist = Math.sqrt(dx*dx + dy*dy)
+            const factor = 1 + dist / (Math.max(lw, lh)) * 0.5
+            return { x: gcx + dx * factor, y: gcy + dy * factor }
+          }
+          const p1 = distort(bx,by), p2 = distort(bx+cw,by)
+          const p3 = distort(bx+cw,by+CELL_SIZE), p4 = distort(bx,by+CELL_SIZE)
+          p.moveTo(p1.x,p1.y); p.lineTo(p2.x,p2.y); p.lineTo(p3.x,p3.y); p.lineTo(p4.x,p4.y)
+          p.closePath()
+        }
+      }
+      else {
+        // Rectangular: simple grid with optional gutter
+        const bx = c * (cw + gutterX)
+        const by = r * (CELL_SIZE + gutterY)
+        p.rect(bx, by, cw, CELL_SIZE)
+      }
+      gridPaths.push({ r, c, path: p })
+    }
+  }
+}
+
+function gridResizeCanvas() {
+  const { w, h } = gridGetCanvasSize()
+  const dpr = window.devicePixelRatio || 1
+  canvas.width  = w * dpr; canvas.height = h * dpr
+  canvas.style.width  = w + 'px'; canvas.style.height = h + 'px'
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  gridBuildPaths()
+}
+
+function gridGetCellFromPoint(px, py) {
+  const { ox, oy } = gridGetOffset()
+  const dpr = window.devicePixelRatio || 1
+  // isPointInPath applies inverse(CTM) to (x,y) before testing.
+  // CTM = scale(dpr), so we must pass physical pixels (px*dpr) to hit
+  // paths whose coordinates are in CSS pixel space.
+  const lx = (px - ox) * dpr
+  const ly = (py - oy) * dpr
+  for (const { r, c, path } of gridPaths) {
+    if (ctx.isPointInPath(path, lx, ly)) return { r, c }
+  }
+  return null
+}
+
+// ─────────────────────────────────────────────
+//  PIXEL LAYOUT
+// ─────────────────────────────────────────────
+function pixelCellW() { return pixelActiveLayer()?.cellW ?? 15 }
+function pixelCellH() { return pixelActiveLayer()?.cellH ?? 15 }
+
+function pixelGetCanvasSize() {
+  const al = pixelActiveLayer()
+  if (!al) return { w: 200, h: 300 }
+  const { rows, cols, gapX=1, gapY=1, rowStagger=0, colStagger=0, cellW=15, cellH=15 } = al
+  return {
+    w: cols * cellW + Math.max(0, cols - 1) * gapX + Math.abs(rowStagger) * (rows - 1) + PIXEL_PAD * 2,
+    h: rows * cellH + Math.max(0, rows - 1) * gapY + Math.abs(colStagger) * (cols - 1) + PIXEL_PAD * 2
+  }
+}
+
+function pixelResizeCanvas() {
+  const { w, h } = pixelGetCanvasSize()
+  const dpr = window.devicePixelRatio || 1
+  canvas.width  = w * dpr; canvas.height = h * dpr
+  canvas.style.width  = w + 'px'; canvas.style.height = h + 'px'
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+
+function layerGetCellPos(layer, col, row) {
+  const { gapX=1, gapY=1, rowStagger=0, colStagger=0, rows, cols, cellW=15, cellH=15, offsetX=0, offsetY=0 } = layer
+  const compX = rowStagger < 0 ? Math.abs(rowStagger) * (rows - 1) : 0
+  const compY = colStagger < 0 ? Math.abs(colStagger) * (cols - 1) : 0
+  return {
+    x: PIXEL_PAD + col * (cellW + gapX) + row * rowStagger + compX + offsetX,
+    y: PIXEL_PAD + row * (cellH + gapY) + col * colStagger + compY + offsetY
+  }
+}
+
+function pixelGetCellPos(col, row) {
+  return layerGetCellPos(pixelActiveLayer(), col, row)
+}
+
+function pixelGetCellFromPoint(px, py) {
+  const al = pixelActiveLayer()
+  const { rows, cols, cellW=15, cellH=15 } = al
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const { x, y } = layerGetCellPos(al, c, r)
+      if (px >= x && px <= x + cellW && py >= y && py <= y + cellH) return { r, c }
+    }
+  return null
+}
+
+// ─────────────────────────────────────────────
+//  DISPATCH: LAYOUT
+// ─────────────────────────────────────────────
+function resizeCanvas() {
+  currentMode === 'grid' ? gridResizeCanvas() : pixelResizeCanvas()
+}
+
+function getActiveCellFromPoint(px, py) {
+  return currentMode === 'grid' ? gridGetCellFromPoint(px, py) : pixelGetCellFromPoint(px, py)
+}
+
+// ─────────────────────────────────────────────
+//  SHAPE PATH (shared)
+// ─────────────────────────────────────────────
+function shapePath(ctx2, w, h, r2, type2) {
+  ctx2.beginPath()
+  switch (type2) {
+    case 'rect': {
+      ctx2.roundRect(0, 0, w, h, r2 * Math.min(w, h) * 0.5)
+      break
+    }
+    case 'circle': {
+      ctx2.ellipse(w/2, h/2, w/2, h/2, 0, 0, Math.PI * 2)
+      break
+    }
+    case 'diamond': {
+      const hw = w/2, hh = h/2, k = r2 * 0.45
+      ctx2.moveTo(hw*(1+k), hh*k)
+      ctx2.lineTo(hw*(2-k), hh*(1-k))
+      ctx2.quadraticCurveTo(w, hh, hw*(2-k), hh*(1+k))
+      ctx2.lineTo(hw*(1+k), hh*(2-k))
+      ctx2.quadraticCurveTo(hw, h, hw*(1-k), hh*(2-k))
+      ctx2.lineTo(hw*k, hh*(1+k))
+      ctx2.quadraticCurveTo(0, hh, hw*k, hh*(1-k))
+      ctx2.lineTo(hw*(1-k), hh*k)
+      ctx2.quadraticCurveTo(hw, 0, hw*(1+k), hh*k)
+      ctx2.closePath()
+      break
+    }
+    case 'cross': {
+      // Trace cross as a single 12-point polygon so stroke (grid lines) works correctly
+      const ox = w * 0.35 * (1 - r2 * 0.3), oy = h * 0.35 * (1 - r2 * 0.3)
+      ctx2.moveTo(ox, 0);    ctx2.lineTo(w-ox, 0)
+      ctx2.lineTo(w-ox, oy); ctx2.lineTo(w, oy)
+      ctx2.lineTo(w, h-oy);  ctx2.lineTo(w-ox, h-oy)
+      ctx2.lineTo(w-ox, h);  ctx2.lineTo(ox, h)
+      ctx2.lineTo(ox, h-oy); ctx2.lineTo(0, h-oy)
+      ctx2.lineTo(0, oy);    ctx2.lineTo(ox, oy)
+      ctx2.closePath()
+      break
+    }
+    case 'star4': {
+      const cx2 = w/2, cy2 = h/2, ix = w*(0.08+r2*0.40), iy = h*(0.08+r2*0.40)
+      for (let i = 0; i < 8; i++) {
+        const a = i*Math.PI/4 - Math.PI/2, outer = i%2===0
+        const px2 = cx2 + Math.cos(a)*(outer?w/2:ix)
+        const py2 = cy2 + Math.sin(a)*(outer?h/2:iy)
+        i===0 ? ctx2.moveTo(px2,py2) : ctx2.lineTo(px2,py2)
+      }
+      ctx2.closePath(); break
+    }
+    case 'star8': {
+      const cx2 = w/2, cy2 = h/2, ix = w*(0.2+r2*0.2), iy = h*(0.2+r2*0.2)
+      for (let i = 0; i < 16; i++) {
+        const a = i*Math.PI/8 - Math.PI/2, outer = i%2===0
+        const px2 = cx2 + Math.cos(a)*(outer?w/2:ix)
+        const py2 = cy2 + Math.sin(a)*(outer?h/2:iy)
+        i===0 ? ctx2.moveTo(px2,py2) : ctx2.lineTo(px2,py2)
+      }
+      ctx2.closePath(); break
+    }
+    case 'ring': {
+      const hs = 0.65 - r2*0.45
+      ctx2.ellipse(w/2, h/2, w/2, h/2, 0, 0, Math.PI*2, false)
+      ctx2.ellipse(w/2, h/2, w/2*hs, h/2*hs, 0, 0, Math.PI*2, true)
+      break
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  GRID RENDERING
+// ─────────────────────────────────────────────
+function gridRenderMainCanvas(hoveredCell) {
+  const { cellColor, showGrid } = state
+  const { w, h } = gridGetCanvasSize()
+  const { ox, oy } = gridGetOffset()
+
+  ctx.clearRect(0, 0, w, h)
+  ctx.fillStyle = THEMES[currentTheme].canvasBg
+  ctx.fillRect(0, 0, w, h)
+
+  ctx.save()
+  ctx.translate(ox, oy)
+
+  const glyph = gridGetCurrentGlyph()
+  for (const { r, c, path } of gridPaths) {
+    const active  = glyph?.[r]?.[c]
+    const hovered = hoveredCell?.r === r && hoveredCell?.c === c
+    
+    if (active) {
+      ctx.fillStyle = cellColor; ctx.fill(path)
+    } else if (hovered) {
+      ctx.fillStyle = THEMES[currentTheme].hoverFill; ctx.fill(path)
+      if (showGrid) { ctx.globalAlpha = state.gridOpacity ?? 1; ctx.strokeStyle = THEMES[currentTheme].hoverStroke; ctx.lineWidth = 1; ctx.stroke(path); ctx.globalAlpha = 1 }
+    } else if (showGrid) {
+      ctx.globalAlpha = state.gridOpacity ?? 1; ctx.strokeStyle = THEMES[currentTheme].gridLine; ctx.lineWidth = 1; ctx.stroke(path); ctx.globalAlpha = 1
+    }
+  }
+  ctx.restore()
+}
+
+// ─────────────────────────────────────────────
+//  PIXEL RENDERING
+// ─────────────────────────────────────────────
+function pixelRenderMainCanvas(hoveredCell) {
+  const { w, h } = pixelGetCanvasSize()
+  const al = pixelActiveLayer()
+  const { rows, cols, smooth=0, skew=0, cellW=15, cellH=15 } = al
+  const r2 = smooth / 100
+  const skewFactor = skew / 100
+  const char = CHARSET[currentCharIdx]
+  const { showGrid } = pixelState
+
+  ctx.clearRect(0, 0, w, h)
+  ctx.fillStyle = THEMES[currentTheme].canvasBg
+  ctx.fillRect(0, 0, w, h)
+
+  // Pass 1: grid lines using active layer params
+  if (showGrid) {
+    ctx.globalAlpha = pixelState.gridOpacity ?? 1
+    ctx.strokeStyle = THEMES[currentTheme].gridLine
+    ctx.lineWidth = 1
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const { x, y } = layerGetCellPos(al, c, r)
+        ctx.save(); ctx.translate(x, y)
+        if (skewFactor !== 0) ctx.transform(1, 0, skewFactor, 1, 0, 0)
+        shapePath(ctx, cellW, cellH, r2, al.shape)
+        ctx.stroke()
+        ctx.restore()
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  // Pass 2: render each layer with its own params (reverse so index-0 = top of list = top of canvas)
+  ;[...pixelState.layers].reverse().forEach(layer => {
+    if (layer.visible === false) return
+    if (layer.fusion) { renderLayerFused(ctx, layer, char); return }
+    const glyph = layer.glyphs[char]; if (!glyph) return
+    const { rows: lr, cols: lc, smooth: ls=0, skew: lsk=0, cellW: lw=15, cellH: lh=15 } = layer
+    const lr2 = ls / 100, lSkew = lsk / 100
+    ctx.globalAlpha = layer.opacity
+    ctx.fillStyle = layer.color
+    for (let r = 0; r < lr; r++) {
+      for (let c = 0; c < lc; c++) {
+        if (!glyph[r]?.[c]) continue
+        const { x, y } = layerGetCellPos(layer, c, r)
+        ctx.save(); ctx.translate(x, y)
+        if (lSkew !== 0) ctx.transform(1, 0, lSkew, 1, 0, 0)
+        shapePath(ctx, lw, lh, lr2, layer.shape)
+        ctx.fill()
+        ctx.restore()
+      }
+    }
+    ctx.globalAlpha = 1
+  })
+
+  // Pass 3: hover on active layer
+  if (hoveredCell) {
+    const { r, c } = hoveredCell
+    const activeGlyph = al.glyphs[char]
+    if (!activeGlyph?.[r]?.[c]) {
+      const { x, y } = layerGetCellPos(al, c, r)
+      ctx.save(); ctx.translate(x, y)
+      if (skewFactor !== 0) ctx.transform(1, 0, skewFactor, 1, 0, 0)
+      ctx.fillStyle = THEMES[currentTheme].hoverFill
+      shapePath(ctx, cellW, cellH, r2, al.shape)
+      ctx.fill()
+      if (showGrid) {
+        ctx.globalAlpha = pixelState.gridOpacity ?? 1
+        ctx.strokeStyle = THEMES[currentTheme].hoverStroke
+        ctx.lineWidth = 1; ctx.stroke()
+        ctx.globalAlpha = 1
+      }
+      ctx.restore()
+    }
+  }
+}
+
+// Fusion (metaball/goo) renderer for a single layer
+function renderLayerFused(ctx, layer, char) {
+  const glyph = layer.glyphs[char]; if (!glyph) return
+  if (!glyph.some(row => row?.some(v => v))) return  // all-false glyph → skip
+
+  const { rows: lr, cols: lc, smooth: ls=0, skew: lsk=0, cellW: lw=15, cellH: lh=15 } = layer
+  const lr2 = ls / 100, lSkew = lsk / 100
+  const dpr = window.devicePixelRatio || 1
+  const str = (layer.fusionStr ?? 50) / 100  // 0–1
+
+  // Offscreen canvas: must cover all possible cell positions for this layer.
+  // Use main canvas dimensions as base; expand if layer cells extend beyond.
+  const mainW = canvas.width || 1, mainH = canvas.height || 1
+  const off = document.createElement('canvas')
+  off.width = mainW; off.height = mainH
+  const offCtx = off.getContext('2d')
+  if (!offCtx) return
+  offCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+  // Blur radius: fusionStr controls how far influence spreads (in CSS px)
+  const blurPx = Math.max(1.5, str * Math.min(lw, lh) * 1.1)
+  offCtx.filter = `blur(${blurPx.toFixed(2)}px)`
+  offCtx.fillStyle = '#ffffff'
+
+  for (let r = 0; r < lr; r++) {
+    for (let c = 0; c < lc; c++) {
+      if (!glyph[r]?.[c]) continue
+      const { x, y } = layerGetCellPos(layer, c, r)
+      offCtx.save()
+      offCtx.translate(x, y)
+      if (lSkew !== 0) offCtx.transform(1, 0, lSkew, 1, 0, 0)
+      shapePath(offCtx, lw, lh, lr2, layer.shape)
+      offCtx.fill()
+      offCtx.restore()
+    }
+  }
+
+  // Read blurred alpha channel (NOT R channel — white shapes always have R=255).
+  // The alpha channel is the true Gaussian "influence field" for metaball merging.
+  const imageData = offCtx.getImageData(0, 0, mainW, mainH)
+  const d = imageData.data
+  const [r255, g255, b255] = hexToRgb(layer.color)
+
+  // Threshold descends from 0.55 → 0.30 as str goes 0→1
+  // Lower threshold = more pixels survive = wider fusion / stronger merge
+  const thresh = Math.round((0.55 - str * 0.25) * 255)
+  const band = 10  // ±10 alpha units for smooth cubic-Hermite anti-aliased edge
+  const lo = Math.max(0, thresh - band), hi = Math.min(255, thresh + band)
+
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3]  // alpha channel = metaball influence value
+    if (a <= lo) {
+      d[i] = d[i+1] = d[i+2] = d[i+3] = 0
+    } else if (a >= hi) {
+      d[i] = r255; d[i+1] = g255; d[i+2] = b255; d[i+3] = 255
+    } else {
+      const t = (a - lo) / (hi - lo)
+      const sm = t * t * (3 - 2 * t)  // cubic Hermite smooth-step
+      d[i] = r255; d[i+1] = g255; d[i+2] = b255
+      d[i+3] = Math.round(sm * 255)
+    }
+  }
+  offCtx.putImageData(imageData, 0, 0)
+
+  // Composite back in physical-pixel space (bypass DPR transform)
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.globalAlpha = layer.opacity
+  ctx.drawImage(off, 0, 0)
+  ctx.globalAlpha = 1
+  ctx.restore()
+}
+
+// ─────────────────────────────────────────────
+//  EXPORT HELPERS (canvas-based render + vector trace)
+// ─────────────────────────────────────────────
+
+// Render a character's pixel layers to a standalone canvas at `scale` × res.
+// Returns {canvas, cssW, cssH, pW, pH, minX, minY} or null if char is empty.
+function pixelRenderCharToCanvas(char, scale) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const layer of pixelState.layers) {
+    if (layer.visible === false) continue
+    const g = layer.glyphs[char]; if (!g) continue
+    const { rows: lr, cols: lc, cellW: lw = 15, cellH: lh = 15 } = layer
+    for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
+      if (!g[r]?.[c]) continue
+      const { x, y } = layerGetCellPos(layer, c, r)
+      minX = Math.min(minX, x); minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x + lw); maxY = Math.max(maxY, y + lh)
+    }
+  }
+  if (!isFinite(minX)) return null
+
+  const cssW = maxX - minX, cssH = maxY - minY
+  const pW = Math.max(1, Math.ceil(cssW * scale))
+  const pH = Math.max(1, Math.ceil(cssH * scale))
+  const exportCanvas = document.createElement('canvas')
+  exportCanvas.width = pW; exportCanvas.height = pH
+  const exportCtx = exportCanvas.getContext('2d')
+  if (!exportCtx) return null
+
+  for (const layer of [...pixelState.layers].reverse()) {
+    if (layer.visible === false) continue
+    const g = layer.glyphs[char]; if (!g) continue
+    if (!g.some(row => row?.some(v => v))) continue
+    const { rows: lr, cols: lc, cellW: lw = 15, cellH: lh = 15, smooth: ls = 0, skew: lsk = 0 } = layer
+    const lr2 = ls / 100, lSkew = lsk / 100
+
+    if (layer.fusion) {
+      const str = (layer.fusionStr ?? 50) / 100
+      const blurPx = Math.max(1, str * Math.min(lw, lh) * 1.1 * scale)
+      // Pad the fusion canvas so blur halos at bounding-box edges are NOT clipped.
+      // Without padding, Gaussian blur extending beyond canvas edges gets truncated,
+      // destroying the Fusion Str metaball effect entirely.
+      const bpad = Math.ceil(blurPx * 2.5)
+      const fusCanvas = document.createElement('canvas')
+      fusCanvas.width = pW + bpad * 2; fusCanvas.height = pH + bpad * 2
+      const fusCtx = fusCanvas.getContext('2d')
+      if (!fusCtx) continue
+      fusCtx.filter = `blur(${blurPx.toFixed(2)}px)`
+      fusCtx.fillStyle = '#ffffff'
+      for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
+        if (!g[r]?.[c]) continue
+        const { x, y } = layerGetCellPos(layer, c, r)
+        fusCtx.save()
+        // Offset by bpad so shapes near bounding-box edges have room to blur
+        fusCtx.translate((x - minX) * scale + bpad, (y - minY) * scale + bpad)
+        if (lSkew !== 0) fusCtx.transform(1, 0, lSkew, 1, 0, 0)
+        shapePath(fusCtx, lw * scale, lh * scale, lr2, layer.shape)
+        fusCtx.fill(); fusCtx.restore()
+      }
+      fusCtx.filter = 'none'
+      const fW = fusCanvas.width, fH = fusCanvas.height
+      const imgData = fusCtx.getImageData(0, 0, fW, fH)
+      const d = imgData.data
+      const [fr, fg, fb] = hexToRgb(layer.color)
+      const thresh = Math.round((0.55 - str * 0.25) * 255)
+      const band = 10, lo = Math.max(0, thresh - band), hi = Math.min(255, thresh + band)
+      for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3]
+        if (a <= lo) { d[i] = d[i+1] = d[i+2] = d[i+3] = 0 }
+        else if (a >= hi) { d[i] = fr; d[i+1] = fg; d[i+2] = fb; d[i+3] = 255 }
+        else { const t=(a-lo)/(hi-lo),sm=t*t*(3-2*t); d[i]=fr;d[i+1]=fg;d[i+2]=fb;d[i+3]=Math.round(sm*255) }
+      }
+      fusCtx.putImageData(imgData, 0, 0)
+      exportCtx.save(); exportCtx.globalAlpha = layer.opacity
+      // Crop the padded canvas back to the export canvas viewport (bpad offset)
+      exportCtx.drawImage(fusCanvas, bpad, bpad, pW, pH, 0, 0, pW, pH)
+      exportCtx.globalAlpha = 1; exportCtx.restore()
+    } else {
+      exportCtx.save(); exportCtx.globalAlpha = layer.opacity
+      exportCtx.fillStyle = layer.color
+      for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
+        if (!g[r]?.[c]) continue
+        const { x, y } = layerGetCellPos(layer, c, r)
+        exportCtx.save()
+        exportCtx.translate((x - minX) * scale, (y - minY) * scale)
+        if (lSkew !== 0) exportCtx.transform(1, 0, lSkew, 1, 0, 0)
+        shapePath(exportCtx, lw * scale, lh * scale, lr2, layer.shape)
+        exportCtx.fill(); exportCtx.restore()
+      }
+      exportCtx.restore()
+    }
+  }
+  return { canvas: exportCanvas, cssW, cssH, pW, pH, minX, minY }
+}
+
+
+function renderMainCanvas(hoveredCell) {
+  currentMode === 'grid' ? gridRenderMainCanvas(hoveredCell) : pixelRenderMainCanvas(hoveredCell)
+}
+
+// ─────────────────────────────────────────────
+//  GRID THUMBNAIL
+// ─────────────────────────────────────────────
+function gridRenderThumbnail(char, canvasEl) {
+  const glyph = gridGlyphs()[char]
+  const { cellColor } = state
+  const s = Math.floor(canvasEl.parentElement.offsetWidth)
+  const dpr = window.devicePixelRatio || 1
+  canvasEl.width = s*dpr; canvasEl.height = s*dpr
+  const tc = canvasEl.getContext('2d')
+  tc.scale(dpr, dpr)
+  tc.fillStyle = THEMES[currentTheme].thumbnailBg
+  tc.fillRect(0,0,s,s)
+
+  if (!glyph || !glyph.some(row => row.some(v=>v))) {
+    tc.fillStyle = THEMES[currentTheme].placeholderText
+    tc.font = `${s*0.52}px 'DM Sans',sans-serif`
+    tc.textAlign = 'center'; tc.textBaseline = 'middle'
+    tc.fillText(char, s/2, s/2 + s*0.04); return
+  }
+
+  // Scale from the logical grid dimensions, not the full canvas
+  const lw = GRID_LOGICAL_W(), lh = GRID_LOGICAL_H()
+  const pad = 4
+  const scale = Math.min((s - pad*2) / lw, (s - pad*2) / lh)
+  const tx = pad + (s - pad*2 - lw * scale) / 2
+  const ty = pad + (s - pad*2 - lh * scale) / 2
+
+  tc.save()
+  tc.translate(tx, ty)
+  tc.scale(scale, scale)
+  tc.fillStyle = cellColor
+  for (const {r, c, path} of gridPaths) {
+    if (glyph[r]?.[c]) tc.fill(path)
+  }
+  tc.restore()
+}
+
+// ─────────────────────────────────────────────
+//  PIXEL THUMBNAIL
+// ─────────────────────────────────────────────
+function pixelRenderThumbnail(char, canvasEl) {
+  const al = pixelActiveLayer()
+  const { rows, cols } = al
+  const s = Math.floor(canvasEl.parentElement.offsetWidth)
+  const dpr = window.devicePixelRatio || 1
+  canvasEl.width = s*dpr; canvasEl.height = s*dpr
+  const tc = canvasEl.getContext('2d')
+  tc.scale(dpr, dpr)
+  tc.fillStyle = THEMES[currentTheme].thumbnailBg
+  tc.fillRect(0, 0, s, s)
+
+  const hasAny = pixelState.layers.some(l => l.glyphs[char]?.some(row => row.some(v => v)))
+  if (!hasAny) {
+    tc.fillStyle = THEMES[currentTheme].placeholderText
+    tc.font = `${s*0.52}px 'DM Sans',sans-serif`
+    tc.textAlign = 'center'; tc.textBaseline = 'middle'
+    tc.fillText(char, s/2, s/2 + s*0.04); return
+  }
+
+  const pad = 2
+  const csH = Math.floor((s - pad*2) / Math.max(cols, rows))
+  const csW = Math.round(csH * (al.cellW||15) / (al.cellH||15))
+  ;[...pixelState.layers].reverse().forEach(layer => {
+    if (layer.visible === false) return
+    const glyph = layer.glyphs[char]; if (!glyph) return
+    const lr = layer.rows ?? rows, lc = layer.cols ?? cols
+    const lcsH = Math.floor((s - pad*2) / Math.max(lc, lr))
+    const lcsW = Math.round(lcsH * (layer.cellW||15) / (layer.cellH||15))
+    tc.globalAlpha = layer.opacity
+    tc.fillStyle = layer.color
+    for (let r = 0; r < lr; r++) {
+      for (let c = 0; c < lc; c++) {
+        if (!glyph[r]?.[c]) continue
+        const x = pad + (s-pad*2-lc*lcsW)/2 + c*lcsW
+        const y = pad + (s-pad*2-lr*lcsH)/2 + r*lcsH
+        tc.save(); tc.translate(x, y)
+        shapePath(tc, lcsW*0.85, lcsH*0.85, (layer.smooth||0)/100, layer.shape)
+        tc.fill(); tc.restore()
+      }
+    }
+    tc.globalAlpha = 1
+  })
+}
+
+function renderThumbnail(char, canvasEl) {
+  currentMode === 'grid' ? gridRenderThumbnail(char, canvasEl) : pixelRenderThumbnail(char, canvasEl)
+}
+
+function renderAllThumbnails() {
+  document.querySelectorAll('#char-grid .char-cell').forEach(cell => {
+    const cnv = cell.querySelector('canvas')
+    if (cnv) renderThumbnail(cell.dataset.char, cnv)
+  })
+  updateGlyphCount()
+}
+
+// ─────────────────────────────────────────────
+//  GRID PREVIEW
+// ─────────────────────────────────────────────
+function gridRenderPreview() {
+  const inp = document.getElementById('preview-input'); if (!inp) return
+  const text = inp.value
+  const { cellColor } = state
+  const lw = GRID_LOGICAL_W(), lh = GRID_LOGICAL_H()
+  const wrap = document.getElementById('preview-canvas-wrap')
+  const pc = document.getElementById('preview-canvas')
+  if (!wrap || !pc) return
+  
+  const previewH = 48
+  const scale = previewH / Math.max(1, lh)
+  const charW = lw * scale
+  
+  const totalW = text.length * charW
+  const dpr = window.devicePixelRatio || 1
+  pc.width  = Math.max(totalW, wrap.offsetWidth-16) * dpr
+  pc.height = previewH * dpr; pc.style.height = previewH + 'px'
+  const c2 = pc.getContext('2d'); c2.scale(dpr,dpr); c2.clearRect(0,0,pc.width,pc.height)
+
+  for (let ci = 0; ci < text.length; ci++) {
+    const glyph = gridGlyphs()[text[ci]]; if (!glyph) continue
+    c2.save()
+    c2.translate(ci * charW, 0)
+    c2.scale(scale, scale)
+    c2.fillStyle = cellColor
+    for (const {r, c, path} of gridPaths) {
+      if (glyph[r]?.[c]) c2.fill(path)
+    }
+    c2.restore()
+  }
+}
+
+// ─────────────────────────────────────────────
+//  PIXEL PREVIEW
+// ─────────────────────────────────────────────
+function pixelRenderPreview() {
+  const inp = document.getElementById('preview-input'); if (!inp) return
+  const text = inp.value
+  const al = pixelActiveLayer()
+  const { rows, cols, smooth=0, skew=0 } = al
+  const skewFactor = skew / 100
+  const wrap = document.getElementById('preview-canvas-wrap')
+  const pc = document.getElementById('preview-canvas')
+  if (!wrap || !pc) return
+  const TH = 4, TW = TH
+  const CW = cols*TW, CH = rows*TH
+  const totalW = text.length * (CW + 4)
+  const dpr = window.devicePixelRatio || 1
+  pc.width  = Math.max(totalW, wrap.offsetWidth-16) * dpr
+  pc.height = (CH+16) * dpr; pc.style.height = (CH+16)+'px'
+  const c2 = pc.getContext('2d'); c2.scale(dpr,dpr); c2.clearRect(0,0,pc.width,pc.height)
+
+  for (let ci = 0; ci < text.length; ci++) {
+    const ox = ci*(CW+4)+8
+    ;[...pixelState.layers].reverse().forEach(layer => {
+      if (layer.visible === false) return
+      const glyph = layer.glyphs[text[ci]]; if (!glyph) return
+      c2.globalAlpha = layer.opacity
+      c2.fillStyle = layer.color
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        if (!glyph[r]?.[c]) continue
+        c2.save(); c2.translate(ox + c*TW, 8 + r*TH)
+        if (skewFactor !== 0) c2.transform(1, 0, skewFactor, 1, 0, 0)
+        shapePath(c2, TW, TH, smooth/100, layer.shape); c2.fill(); c2.restore()
+      }
+      c2.globalAlpha = 1
+    })
+  }
+}
+
+function renderPreview() {
+  currentMode === 'grid' ? gridRenderPreview() : pixelRenderPreview()
+}
+
+// ─────────────────────────────────────────────
+//  GLYPH MANAGEMENT
+// ─────────────────────────────────────────────
+function gridGetCurrentGlyph() {
+  const char = CHARSET[currentCharIdx]
+  const trueCols = getGridActualCols()
+  const glyphs = gridGlyphs()
+  if (!glyphs[char])
+    glyphs[char] = Array.from({length:state.rows}, ()=>new Array(trueCols).fill(false))
+  return glyphs[char]
+}
+
+function pixelActiveLayer() {
+  return pixelState.layers[pixelState.activeLayerIdx] || pixelState.layers[0]
+}
+
+function pixelGetLayerGlyph(layer, char) {
+  if (!layer.glyphs[char])
+    layer.glyphs[char] = Array.from({length: layer.rows ?? 24}, () => new Array(layer.cols ?? 16).fill(false))
+  return layer.glyphs[char]
+}
+
+function pixelGetCurrentGlyph() {
+  return pixelGetLayerGlyph(pixelActiveLayer(), CHARSET[currentCharIdx])
+}
+
+function getActiveGlyph() {
+  return currentMode === 'grid' ? gridGetCurrentGlyph() : pixelGetCurrentGlyph()
+}
+
+// for backward compat inside grid code
+function getCurrentGlyph() { return gridGetCurrentGlyph() }
+
+function gridEnsureGlyphSize(oldCols = null) {
+  const glyphs = gridGlyphs()
+  const trueCols = getGridActualCols()
+  CHARSET.forEach(char => {
+    const g = glyphs[char]
+    if (!g) return
+    const srcCols = oldCols !== null ? oldCols : (g[0]?.length || trueCols)
+    const srcRows = g.length || state.rows
+    if (srcRows === state.rows && srcCols === trueCols) return
+    glyphs[char] = Array.from({length: state.rows}, (_, r) => {
+      const srcR = Math.min(Math.round(r * srcRows / state.rows), srcRows - 1)
+      return Array.from({length: trueCols}, (_, c) => {
+        const srcC = Math.min(Math.round(c * srcCols / trueCols), srcCols - 1)
+        return g[srcR]?.[srcC] || false
+      })
+    })
+  })
+}
+
+function pixelEnsureGlyphSize() {
+  const char = CHARSET[currentCharIdx]
+  pixelState.layers.forEach(layer => {
+    const g = layer.glyphs[char]; if (!g) return
+    layer.glyphs[char] = Array.from({length: layer.rows ?? 24}, (_, r) =>
+      Array.from({length: layer.cols ?? 16}, (_, c) => g[r]?.[c] || false))
+  })
+}
+
+// ─────────────────────────────────────────────
+//  MOUSE INTERACTIONS
+// ─────────────────────────────────────────────
+let hoveredCell = null
+
+function getScaledPos(e) {
+  const rect = canvas.getBoundingClientRect()
+  const z = currentMode === 'grid' ? state.zoom : pixelState.zoom
+  return {
+    px: (e.clientX - rect.left) / z,
+    py: (e.clientY - rect.top)  / z
+  }
+}
+
+canvas.addEventListener('mousedown', e => {
+  const {px,py} = getScaledPos(e)
+  const cell = getActiveCellFromPoint(px,py); if (!cell) return
+  pushHistory()
+  isDragging = true
+  const glyph = getActiveGlyph()
+  dragMode = glyph[cell.r][cell.c] ? 'off' : 'on'
+  glyph[cell.r][cell.c] = dragMode === 'on'
+  renderMainCanvas(hoveredCell); updateThumbnail(); renderPreview()
+})
+
+canvas.addEventListener('mousemove', e => {
+  const {px,py} = getScaledPos(e)
+  hoveredCell = getActiveCellFromPoint(px,py)
+  if (isDragging && hoveredCell) {
+    const glyph = getActiveGlyph()
+    glyph[hoveredCell.r][hoveredCell.c] = dragMode === 'on'
+    updateThumbnail(); renderPreview()
+  }
+  renderMainCanvas(hoveredCell)
+})
+
+canvas.addEventListener('mouseup', ()=>{ isDragging=false; autoSave() })
+canvas.addEventListener('mouseleave', ()=>{
+  if (isDragging) autoSave()
+  isDragging=false; hoveredCell=null; renderMainCanvas(null)
+})
+
+// ─────────────────────────────────────────────
+//  THEME
+// ─────────────────────────────────────────────
+function toggleTheme() {
+  currentTheme = currentTheme === 'light' ? 'dark' : 'light'
+  document.body.classList.toggle('dark', currentTheme === 'dark')
+  document.getElementById('theme-toggle').innerHTML = currentTheme==='dark' ? SVG_SUN : SVG_MOON
+  renderMainCanvas(hoveredCell); renderAllThumbnails()
+}
+
+// ─────────────────────────────────────────────
+//  ZOOM
+// ─────────────────────────────────────────────
+function applyZoom() {
+  const z = currentMode === 'grid' ? state.zoom : pixelState.zoom
+  document.getElementById('canvas-wrapper').style.transform = `scale(${z})`
+  document.getElementById('zoom-display').textContent = Math.round(z * 100) + '%'
+}
+
+function zoomIn() {
+  if (currentMode==='grid') state.zoom = Math.min(4, +(state.zoom+0.1).toFixed(2))
+  else pixelState.zoom = Math.min(4, +(pixelState.zoom+0.1).toFixed(2))
+  applyZoom()
+}
+function zoomOut() {
+  if (currentMode==='grid') state.zoom = Math.max(0.1, +(state.zoom-0.1).toFixed(2))
+  else pixelState.zoom = Math.max(0.1, +(pixelState.zoom-0.1).toFixed(2))
+  applyZoom()
+}
+function resetZoom() {
+  if (currentMode==='grid') state.zoom=1.0; else pixelState.zoom=1.0
+  applyZoom()
+}
+
+// ─────────────────────────────────────────────
+//  MODE SWITCH
+// ─────────────────────────────────────────────
+function switchMode(mode) {
+  currentMode = mode
+  document.body.classList.toggle('pixel-mode', mode === 'pixel')
+  document.getElementById('btn-mode-grid').classList.toggle('active', mode==='grid')
+  document.getElementById('btn-mode-pixel').classList.toggle('active', mode==='pixel')
+  updateDocHeader()
+  if (mode==='grid') gridEnsureGlyphSize(); else pixelEnsureGlyphSize()
+  if (mode === 'pixel') { renderLayerList(); pixelSyncSliders() }
+  resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview(); resetZoom()
+}
+
+// ─────────────────────────────────────────────
+//  GRID CONTROLS
+// ─────────────────────────────────────────────
+function updateParam(name, val) {
+  pushHistory()
+  val = parseInt(val) || 0; state[name] = val
+  const sl = document.getElementById('sl-'+name), vEl = document.getElementById('v-'+name)
+  if (sl) sl.value = val; if (vEl) { if (vEl.tagName==='INPUT') vEl.value=val; else vEl.textContent=val }
+  if (name==='rows'||name==='cols') { gridEnsureGlyphSize(); renderAllThumbnails() }
+  gridResizeCanvas(); gridRenderMainCanvas(hoveredCell); gridRenderPreview(); gridAutoSave()
+}
+
+function updateGridSpecificParam(key, val) {
+  pushHistory()
+  const type = state.gridType
+  if (!state[type]) return
+  if (key === 'innerRadius') val = parseInt(val) || 0
+  if (key === 'angle') val = parseInt(val) || 0
+  const oldCols = getGridActualCols()
+  state[type][key] = val
+  
+  const vEl = document.getElementById('v-'+key)
+  if (vEl) { if (vEl.tagName==='INPUT') vEl.value=val; else vEl.textContent=val }
+  
+  const toggle = document.getElementById('toggle-'+key)
+  if (toggle) {
+    toggle.querySelectorAll('.sub-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.val === val))
+  }
+
+  if (key === 'diagonal') gridEnsureGlyphSize(oldCols)
+  gridResizeCanvas(); gridRenderMainCanvas(hoveredCell); renderAllThumbnails(); gridRenderPreview(); gridAutoSave()
+}
+
+function setGridType(type) {
+  if (state.gridType !== type) pushHistory()
+  state.gridType = type
+  document.querySelectorAll('.grid-type-btn').forEach(b=>b.classList.toggle('active', b.dataset.type===type))
+
+  const toggle = (id, cond) => { const el = document.getElementById(id); if (el) el.style.display = cond ? 'block' : 'none' }
+  toggle('section-diagonal', type === 'triangular')
+  toggle('section-org-style', type === 'organic')
+
+  const toggleRow = (id, cond) => { const el = document.getElementById(id); if (el) el.style.display = cond ? 'flex' : 'none' }
+  toggleRow('row-gutterX', type === 'rectangular')
+  toggleRow('row-gutterY', type === 'rectangular')
+  toggleRow('row-ratio', type === 'rectangular')
+  toggleRow('row-innerRadius', type === 'polar')
+  toggleRow('row-angle', type === 'polar')
+
+  if (type === 'triangular') {
+    const val = state.triangular.diagonal
+    const toggle = document.getElementById('toggle-diagonal')
+    if (toggle) toggle.querySelectorAll('.sub-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.val === val))
+  }
+  else if (type === 'organic') {
+    const val = state.organic.subType
+    const toggle = document.getElementById('toggle-subType')
+    if (toggle) toggle.querySelectorAll('.sub-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.val === val))
+  }
+  // Ensure current type's store has correct dimensions (no-op if empty or already correct)
+  gridEnsureGlyphSize()
+
+  gridResizeCanvas(); gridRenderMainCanvas(hoveredCell); renderAllThumbnails(); gridRenderPreview(); gridAutoSave()
+}
+
+function updateColor(hex) {
+  pushHistory()
+  state.cellColor = hex
+  gridRenderMainCanvas(hoveredCell); renderAllThumbnails(); gridRenderPreview(); gridAutoSave()
+}
+
+// ─────────────────────────────────────────────
+//  PIXEL CONTROLS
+// ─────────────────────────────────────────────
+function updatePixelParam(name, val) {
+  pushHistory()
+  val = parseInt(val) || 0
+  pixelActiveLayer()[name] = val
+  const sl = document.getElementById('psl-'+name), vEl = document.getElementById('pv-'+name)
+  if (sl) sl.value = val; if (vEl) { if (vEl.tagName==='INPUT') vEl.value=val; else vEl.textContent=val }
+  if (name==='rows'||name==='cols') { pixelEnsureGlyphSize(); renderAllThumbnails() }
+  pixelResizeCanvas(); pixelRenderMainCanvas(hoveredCell); pixelRenderPreview(); pixelAutoSave()
+}
+
+function setPixelType(type) {
+  pushHistory()
+  pixelActiveLayer().shape = type
+  document.querySelectorAll('.pixel-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type))
+  renderLayerList()
+  pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
+}
+
+function updateGridOpacity(val) {
+  pushHistory()
+  val = Math.max(0, Math.min(100, parseInt(val) || 0))
+  if (currentMode === 'grid') {
+    state.gridOpacity = val / 100
+    const vEl = document.getElementById('v-gridOpacity')
+    if (vEl) vEl.textContent = val
+    gridRenderMainCanvas(hoveredCell); gridAutoSave()
+  } else {
+    pixelState.gridOpacity = val / 100
+    const vEl = document.getElementById('pv-gridOpacity')
+    if (vEl) vEl.textContent = val
+    pixelRenderMainCanvas(hoveredCell); pixelAutoSave()
+  }
+}
+
+function updatePixelColor(hex) {
+  pushHistory()
+  pixelActiveLayer().color = hex
+  renderLayerList()
+  pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
+}
+
+// ─────────────────────────────────────────────
+//  PIXEL LAYER MANAGEMENT
+// ─────────────────────────────────────────────
+function addPixelLayer() {
+  pushHistory()
+  const al = pixelActiveLayer()
+  const n = pixelState.layers.length + 1
+  const { rows, cols, cellW, cellH, gapX, gapY, smooth, skew, rowStagger, colStagger } = al
+  pixelState.layers.push(makePixelLayer(`Layer ${n}`, 'rect', '#000000',
+    { rows, cols, cellW, cellH, gapX, gapY, smooth, skew, rowStagger, colStagger }))
+  setActiveLayer(pixelState.layers.length - 1)
+}
+
+function duplicatePixelLayer(idx) {
+  pushHistory()
+  const src = pixelState.layers[idx]
+  const copy = JSON.parse(JSON.stringify(src))
+  copy.id = Date.now() + Math.random()
+  copy.name = src.name + ' copy'
+  copy.offsetX = (src.offsetX ?? 0) + 8
+  copy.offsetY = (src.offsetY ?? 0) + 8
+  pixelState.layers.splice(idx + 1, 0, copy)
+  setActiveLayer(idx + 1)
+}
+
+function removePixelLayer(idx) {
+  if (pixelState.layers.length <= 1) return
+  pushHistory()
+  pixelState.layers.splice(idx, 1)
+  pixelState.activeLayerIdx = Math.min(pixelState.activeLayerIdx, pixelState.layers.length - 1)
+  setActiveLayer(pixelState.activeLayerIdx)
+}
+
+function setActiveLayer(idx) {
+  pixelState.activeLayerIdx = idx
+  pixelSyncSliders()
+  renderLayerList()
+  pixelResizeCanvas(); pixelRenderMainCanvas(hoveredCell); pixelAutoSave()
+}
+
+function setLayerOpacity(idx, val) {
+  pushHistory()
+  pixelState.layers[idx].opacity = Math.max(0, Math.min(1, val / 100))
+  renderLayerList()
+  pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
+}
+
+function setLayerName(idx, val) {
+  if (val.trim()) pixelState.layers[idx].name = val.trim()
+  pixelAutoSave()
+}
+
+function toggleLayerVisible(idx) {
+  pushHistory()
+  const l = pixelState.layers[idx]
+  l.visible = l.visible === false ? true : false
+  renderLayerList()
+  pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
+}
+
+function toggleLayerFusion(idx) {
+  pushHistory()
+  const l = pixelState.layers[idx]
+  l.fusion = !l.fusion
+  renderLayerList()
+  pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
+}
+
+function moveLayerUp(idx) {
+  if (idx <= 0) return
+  pushHistory()
+  const layers = pixelState.layers;
+  [layers[idx], layers[idx - 1]] = [layers[idx - 1], layers[idx]]
+  if (pixelState.activeLayerIdx === idx) pixelState.activeLayerIdx = idx - 1
+  else if (pixelState.activeLayerIdx === idx - 1) pixelState.activeLayerIdx = idx
+  renderLayerList()
+  pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
+}
+
+function moveLayerDown(idx) {
+  if (idx >= pixelState.layers.length - 1) return
+  pushHistory()
+  const layers = pixelState.layers;
+  [layers[idx], layers[idx + 1]] = [layers[idx + 1], layers[idx]]
+  if (pixelState.activeLayerIdx === idx) pixelState.activeLayerIdx = idx + 1
+  else if (pixelState.activeLayerIdx === idx + 1) pixelState.activeLayerIdx = idx
+  renderLayerList()
+  pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
+}
+
+const SVG_EYE_ON  = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 8C3 4 13 4 15 8C13 12 3 12 1 8Z"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/></svg>`
+const SVG_EYE_OFF = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 8C3 4 13 4 15 8C13 12 3 12 1 8Z"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/><line x1="2" y1="2" x2="14" y2="14"/></svg>`
+const SVG_FUSION  = `<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><ellipse cx="4" cy="6" rx="3.2" ry="3.2"/><ellipse cx="8" cy="6" rx="3.2" ry="3.2"/></svg>`
+
+function hexToRgb(hex) {
+  return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]
+}
+
+function renderLayerList() {
+  const list = document.getElementById('pixel-layer-list'); if (!list) return
+  const n = pixelState.layers.length
+  list.innerHTML = pixelState.layers.map((layer, idx) => {
+    const hidden = layer.visible === false
+    return `
+    <div class="layer-item${idx === pixelState.activeLayerIdx ? ' active' : ''}${hidden ? ' layer-hidden' : ''}" onclick="setActiveLayer(${idx})">
+      <div class="layer-row1">
+        <div class="layer-swatch" style="background:${layer.color};opacity:${hidden ? 0.3 : 1}"></div>
+        <input class="layer-name-input" value="${layer.name.replace(/"/g,'&quot;')}"
+          onclick="event.stopPropagation()"
+          onchange="setLayerName(${idx},this.value)">
+        <div class="layer-actions" onclick="event.stopPropagation()">
+          <button class="layer-icon-btn${hidden ? ' dim' : ''}" title="${hidden ? 'Show' : 'Hide'}" onclick="toggleLayerVisible(${idx})">${hidden ? SVG_EYE_OFF : SVG_EYE_ON}</button>
+          <button class="layer-icon-btn" title="Duplicate" onclick="duplicatePixelLayer(${idx})"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="3" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <button class="layer-icon-btn" title="Move up" ${idx === 0 ? 'disabled' : ''} onclick="moveLayerUp(${idx})"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M5 2L9 7H1Z" fill="currentColor"/></svg></button>
+          <button class="layer-icon-btn" title="Move down" ${idx === n-1 ? 'disabled' : ''} onclick="moveLayerDown(${idx})"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M5 8L1 3H9Z" fill="currentColor"/></svg></button>
+          ${n > 1 ? `<button class="layer-del-btn" title="Delete" onclick="removePixelLayer(${idx})">×</button>` : ''}
+        </div>
+      </div>
+      <div class="layer-row2" onclick="event.stopPropagation()">
+        <span class="layer-shape-tag">${layer.shape}</span>
+        <button class="layer-icon-btn layer-fusion-btn${layer.fusion ? ' fusion-on' : ''}" title="Fusion ${layer.fusion ? 'On' : 'Off'}" onclick="toggleLayerFusion(${idx})">${SVG_FUSION}</button>
+        <div class="layer-opacity-wrap">
+          <input type="range" class="layer-opacity-slider" min="0" max="100"
+            value="${Math.round(layer.opacity * 100)}"
+            oninput="setLayerOpacity(${idx},this.value)">
+          <span class="layer-opacity-val">${Math.round(layer.opacity * 100)}%</span>
+        </div>
+      </div>
+    </div>`
+  }).join('')
+}
+
+// ─────────────────────────────────────────────
+//  SHARED CONTROLS
+// ─────────────────────────────────────────────
+function toggleGrid() {
+  pushHistory()
+  if (currentMode==='grid') state.showGrid=!state.showGrid
+  else pixelState.showGrid=!pixelState.showGrid
+  renderMainCanvas(hoveredCell)
+}
+
+function clearGlyph() {
+  const char = CHARSET[currentCharIdx]
+  if (currentMode==='grid') {
+    gridGlyphs()[char] = Array.from({length:state.rows},()=>new Array(getGridActualCols()).fill(false))
+  } else {
+    const al = pixelActiveLayer()
+    al.glyphs[char] = Array.from({length:al.rows??24},()=>new Array(al.cols??16).fill(false))
+  }
+  renderMainCanvas(hoveredCell); updateThumbnail(); renderPreview()
+}
+
+function randomizeGlyph() {
+  const char = CHARSET[currentCharIdx]
+  const threshold = currentMode==='grid' ? 0.55 : 0.65
+  if (currentMode==='grid') {
+    gridGlyphs()[char] = Array.from({length:state.rows},()=>Array.from({length:getGridActualCols()},()=>Math.random()>threshold))
+  } else {
+    const al = pixelActiveLayer()
+    al.glyphs[char] = Array.from({length:al.rows??24},()=>Array.from({length:al.cols??16},()=>Math.random()>threshold))
+  }
+  renderMainCanvas(hoveredCell); updateThumbnail(); renderPreview(); setStatus('Randomized: '+char)
+}
+
+function prevChar() { currentCharIdx=(currentCharIdx-1+CHARSET.length)%CHARSET.length; switchChar() }
+function nextChar() { currentCharIdx=(currentCharIdx+1)%CHARSET.length; switchChar() }
+
+function switchChar() {
+  const char = CHARSET[currentCharIdx]
+  const disp = document.getElementById('current-char-display')
+  if (disp) disp.textContent = char
+  const expectedTab = currentCharIdx < CHARSET_LATIN.length ? 'latin' : 'korean'
+  if (expectedTab !== activeTab) switchCharTab(expectedTab)
+  if (currentMode==='grid') gridEnsureGlyphSize(); else pixelEnsureGlyphSize()
+  resizeCanvas(); renderMainCanvas(hoveredCell); updateActiveCharCell(); setStatus('Editing: '+char)
+}
+
+function updateActiveCharCell() {
+  document.querySelectorAll('.char-cell').forEach(cell=>
+    cell.classList.toggle('active', cell.dataset.char===CHARSET[currentCharIdx]))
+}
+
+function updateThumbnail() {
+  const char = CHARSET[currentCharIdx]
+  const cell = document.querySelector(`.char-cell[data-char="${CSS.escape(char)}"]`)
+  if (cell) { const cnv=cell.querySelector('canvas'); if(cnv) renderThumbnail(char,cnv) }
+  updateGlyphCount()
+}
+
+function updateGlyphCount() {
+  const isDrawn = c => {
+    if (currentMode==='grid') return gridGlyphs()[c]?.some(row=>row.some(v=>v))
+    return pixelState.layers.some(l => l.glyphs[c]?.some(row=>row.some(v=>v)))
+  }
+  if (activeTab==='latin') {
+    document.getElementById('glyph-count').textContent = `${CHARSET_LATIN.filter(isDrawn).length} / ${CHARSET_LATIN.length}`
+  } else {
+    document.getElementById('glyph-count').textContent = `${CHARSET_KOREAN.filter(isDrawn).length} / ${CHARSET_KOREAN.length}`
+  }
+}
+
+function setStatus(msg) { document.getElementById('status-bar').textContent = msg }
+
+// ─────────────────────────────────────────────
+//  SAVE / LOAD
+// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+//  DOCUMENT STORAGE (Figma-style named docs)
+// ─────────────────────────────────────────────
+const DOCS_KEY = 'gridtype_documents_v1'
+
+function docsGetAll() {
+  try { return JSON.parse(localStorage.getItem(DOCS_KEY)) || [] } catch { return [] }
+}
+
+function updateDocHeader() {
+  const el = document.getElementById('current-doc-name')
+  if (el) el.textContent = getCurrentDocName()
+}
+
+function docsSave(name) {
+  setCurrentDocName(name || 'Untitled')
+  updateDocHeader()
+  const docs = docsGetAll()
+  const isGrid = currentMode === 'grid'
+  const config = isGrid
+    ? { rows:state.rows,cols:state.cols,gutterX:state.gutterX,gutterY:state.gutterY,
+        ratio:state.ratio,gridType:state.gridType,cellColor:state.cellColor,
+        polar:state.polar,triangular:state.triangular,organic:state.organic }
+    : { showGrid: pixelState.showGrid, gridOpacity: pixelState.gridOpacity,
+        layers: JSON.parse(JSON.stringify(pixelState.layers)),
+        activeLayerIdx: pixelState.activeLayerIdx }
+  const doc = {
+    id: Date.now(),
+    name: name || 'Untitled',
+    mode: currentMode,
+    config,
+    glyphs: isGrid ? JSON.parse(JSON.stringify(state.glyphsByType)) : null,
+    savedAt: new Date().toLocaleString()
+  }
+  // Update if same name and mode exists, else append
+  const idx = docs.findIndex(d => d.name === doc.name && d.mode === doc.mode)
+  if (idx >= 0) docs[idx] = doc; else docs.unshift(doc)
+  localStorage.setItem(DOCS_KEY, JSON.stringify(docs))
+  setStatus('📄 Saved ' + (isGrid?'grid':'pixel') + ' document: ' + doc.name)
+  renderDocList()
+}
+
+function docsLoad(id) {
+  const doc = docsGetAll().find(d => d.id === id); if (!doc) return
+  if (doc.mode !== currentMode) switchMode(doc.mode)
+  if (doc.mode === 'grid') {
+    Object.assign(state, doc.config)
+    migrateGridGlyphs(doc)
+    gridSyncSliders(); setGridType(state.gridType)
+  } else {
+    migratePixelLoad(doc)
+    pixelSyncSliders()
+  }
+  resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview(); resetZoom()
+  setCurrentDocName(doc.name); updateDocHeader()
+  setStatus('📂 Loaded: ' + doc.name)
+  closeDocManager()
+}
+
+function docsRename(id) {
+  const docs = docsGetAll()
+  const idx = docs.findIndex(d => d.id === id)
+  if (idx < 0) return
+  const oldName = docs[idx].name
+  const newName = prompt('Enter new document name:', oldName)
+  if (newName && newName.trim() && newName !== oldName) {
+    const finalName = newName.trim()
+    // Update name in storage
+    docs[idx].name = finalName
+    localStorage.setItem(DOCS_KEY, JSON.stringify(docs))
+    // If it's the currently active doc, update the global state
+    if (oldName === getCurrentDocName()) {
+      setCurrentDocName(finalName)
+      updateDocHeader()
+    }
+    renderDocList()
+    setStatus('✏️ Renamed: ' + finalName)
+  }
+}
+
+function docsDelete(id) {
+  const docs = docsGetAll()
+  const doc = docs.find(d => d.id === id)
+  if (!doc) return
+  if (confirm(`Delete document "${doc.name}"?`)) {
+    const updated = docs.filter(d => d.id !== id)
+    localStorage.setItem(DOCS_KEY, JSON.stringify(updated))
+    renderDocList()
+    setStatus('🗑️ Document deleted')
+  }
+}
+
+function openDocManager() {
+  document.getElementById('doc-manager').classList.add('open')
+  renderDocList()
+}
+
+function closeDocManager() {
+  document.getElementById('doc-manager').classList.remove('open')
+}
+
+function renderDocList() {
+  const list = document.getElementById('doc-list')
+  if (!list) return
+  const allDocs = docsGetAll()
+  const docs = allDocs.filter(d => d.mode === currentMode)
+  
+  if (docs.length === 0) {
+    list.innerHTML = `<div class="doc-empty">No saved ${currentMode} documents yet</div>`; return
+  }
+  list.innerHTML = docs.map(d => `
+    <div class="doc-item" data-id="${d.id}">
+      <div class="doc-info" onclick="docsLoad(${d.id})">
+        <div class="doc-name">${d.name}</div>
+        <div class="doc-meta">${d.mode.toUpperCase()} · ${d.savedAt}</div>
+      </div>
+      <div class="doc-actions">
+        <button class="doc-action-btn" onclick="docsRename(${d.id})" title="Rename">✎</button>
+        <button class="doc-action-btn del" onclick="docsDelete(${d.id})" title="Delete">✕</button>
+      </div>
+    </div>`).join('')
+}
+
+function saveNewDoc() {
+  const inp = document.getElementById('doc-name-input')
+  const name = inp.value.trim() || 'Untitled'
+  docsSave(name)
+  inp.value = ''
+  closeDocManager()
+}
+
+function createNewDoc() {
+  if (!currentUser) { setStatus('Log in to create documents'); return }
+  if (confirm('Create a new document? Unsaved changes will be lost.')) {
+    if (currentMode === 'grid') {
+      GRID_TYPES.forEach(t => { state.glyphsByType[t] = makeGlyphStore() })
+    }
+    if (currentMode === 'pixel') {
+      pixelState.layers = [makePixelLayer()]
+      pixelState.activeLayerIdx = 0
+      renderLayerList(); pixelSyncSliders()
+    }
+    currentCloudDocId = null
+    clearTimeout(autoSaveTimer)
+    setCurrentDocName('Untitled')
+    updateDocHeader()
+    setStatus('New document — enter a name and click Save')
+  }
+}
+
+function saveCurrentDoc() {
+  if (!currentUser) { setStatus('Log in to save your work'); return }
+  if (!currentCloudDocId) {
+    openDocManagerPatched()
+  } else {
+    docsSaveCloud(getCurrentDocName())
+  }
+}
+
+function clearAllGlyphs() {
+  if (currentMode==='grid') {
+    CHARSET.forEach(c => { gridGlyphs()[c] = Array.from({length:state.rows},()=>new Array(getGridActualCols()).fill(false)) })
+  } else {
+    pixelState.layers.forEach(layer => {
+      CHARSET.forEach(c => { layer.glyphs[c] = Array.from({length:layer.rows},()=>new Array(layer.cols).fill(false)) })
+    })
+  }
+  resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview()
+}
+
+function handleLoadFile(e) {
+  const file = e.target.files[0]; if (!file) return
+  const reader = new FileReader()
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result)
+      const mode = data.mode || 'grid'
+      if (mode==='grid') {
+        Object.assign(state, data.config)
+        migrateGridGlyphs(data)
+        gridSyncSliders(); setGridType(state.gridType)
+      } else {
+        migratePixelLoad(data)
+        pixelSyncSliders()
+      }
+      if (mode!==currentMode) switchMode(mode)
+      else { resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview(); resetZoom() }
+      setStatus('Project loaded')
+    } catch { setStatus('Load failed: invalid file format') }
+  }
+  reader.readAsText(file); e.target.value=''
+}
+
+function gridSyncSliders() {
+  ;['rows','cols','gutterX','gutterY','smooth','skew','ratio'].forEach(k=>{
+    const sl=document.getElementById('sl-'+k), vEl=document.getElementById('v-'+k)
+    const val = state[k]??0
+    if(sl) sl.value=val; if(vEl) { if(vEl.tagName==='INPUT') vEl.value=val; else vEl.textContent=val }
+  })
+  const irSl=document.getElementById('sl-innerRadius'), irV=document.getElementById('v-innerRadius')
+  if(irSl) irSl.value=state.polar.innerRadius; if(irV) irV.value=state.polar.innerRadius
+  const angSl=document.getElementById('sl-angle'), angV=document.getElementById('v-angle')
+  if(angSl) angSl.value=state.polar.angle||0; if(angV) angV.value=state.polar.angle||0
+  document.getElementById('color-picker').value=state.cellColor||'#000000'
+  const goV = Math.round((state.gridOpacity ?? 1) * 100)
+  const goSl = document.getElementById('sl-gridOpacity'), goVal = document.getElementById('v-gridOpacity')
+  if (goSl) goSl.value = goV; if (goVal) goVal.textContent = goV
+}
+
+function pixelSyncSliders() {
+  const al = pixelActiveLayer()
+  ;['rows','cols','cellW','cellH','gapX','gapY','smooth','skew','rowStagger','colStagger','offsetX','offsetY','fusionStr'].forEach(k=>{
+    const sl=document.getElementById('psl-'+k), vEl=document.getElementById('pv-'+k)
+    const val = al?.[k] ?? 0
+    if(sl) sl.value=val; if(vEl) { if(vEl.tagName==='INPUT') vEl.value=val; else vEl.textContent=val }
+  })
+  const goV = Math.round((pixelState.gridOpacity ?? 1) * 100)
+  const goSl = document.getElementById('psl-gridOpacity'), goVal = document.getElementById('pv-gridOpacity')
+  if (goSl) goSl.value = goV; if (goVal) goVal.textContent = goV
+  document.getElementById('pixel-color-picker').value = al?.color || '#000000'
+  document.querySelectorAll('.pixel-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === al?.shape))
+  renderLayerList()
+}
+
+// ─────────────────────────────────────────────
+//  AUTO SAVE / LOAD
+// ─────────────────────────────────────────────
+const GRID_KEY  = 'gridtype_grid_v2'
+const PIXEL_KEY = 'gridtype_pixel_v1'
+
+function autoSave() { scheduleCloudAutoSave() }
+function gridAutoSave() { scheduleCloudAutoSave() }
+function pixelAutoSave() { scheduleCloudAutoSave() }
+
+function scheduleCloudAutoSave() {
+  if (!currentUser) return
+  if (!currentCloudDocId) { setStatus('Unsaved — click Save to save this document'); return }
+  clearTimeout(autoSaveTimer)
+  autoSaveTimer = setTimeout(async () => {
+    const payload = cloudDocPayload(getCurrentDocName())
+    const { error } = await supabase.from('documents').update(payload).eq('id', currentCloudDocId)
+    if (!error) setStatus('Saved · ' + new Date().toLocaleTimeString())
+  }, 2500)
+}
+
+function gridAutoLoad() { return false }
+function pixelAutoLoad() { return false }
+
+function migratePixelLoad(data) {
+  const cfg = data.config || {}
+  const { layers, activeLayerIdx, showGrid, gridOpacity,
+    rows=24, cols=16, cellW=15, cellH=15, gapX=1, gapY=1,
+    smooth=0, skew=0, rowStagger=0, colStagger=0,
+    pixelType, cellColor } = cfg
+  if (showGrid !== undefined) pixelState.showGrid = showGrid
+  if (gridOpacity !== undefined) pixelState.gridOpacity = gridOpacity
+  const globalParams = { rows, cols, cellW, cellH, gapX, gapY, smooth, skew, rowStagger, colStagger }
+  if (layers) {
+    pixelState.layers = layers
+    pixelState.activeLayerIdx = activeLayerIdx || 0
+    // Backward compat: old layers had no per-layer params → copy from global config
+    pixelState.layers.forEach(l => {
+      if (!('rows' in l)) Object.assign(l, globalParams)
+      if (!('offsetX' in l)) { l.offsetX = 0; l.offsetY = 0 }
+      if (!('fusion' in l)) { l.fusion = false; l.fusionStr = 50 }
+      CHARSET.forEach(c => { if (!(c in l.glyphs)) l.glyphs[c] = null })
+    })
+  } else {
+    const oldGlyphs = data.glyphs || {}
+    CHARSET.forEach(c => { if (!(c in oldGlyphs)) oldGlyphs[c] = null })
+    pixelState.layers = [{ id: Date.now(), name: 'Layer 1',
+      shape: pixelType||'rect', color: cellColor||'#000000',
+      opacity: 1.0, glyphs: oldGlyphs, ...globalParams }]
+    pixelState.activeLayerIdx = 0
+  }
+}
+
+
+function migrateGridGlyphs(doc) {
+  const g = doc.glyphs
+  if (g && 'rectangular' in g) {
+    // New per-type format stored under glyphs field
+    state.glyphsByType = g
+  } else if (g) {
+    // Old format: single char-keyed store → put into the saved gridType's bucket
+    const t = state.gridType || 'rectangular'
+    state.glyphsByType = { rectangular: makeGlyphStore(), polar: makeGlyphStore(), triangular: makeGlyphStore(), organic: makeGlyphStore() }
+    state.glyphsByType[t] = g
+  } else {
+    state.glyphsByType = { rectangular: makeGlyphStore(), polar: makeGlyphStore(), triangular: makeGlyphStore(), organic: makeGlyphStore() }
+  }
+  ensureGlyphStores()
+}
+
+// ─────────────────────────────────────────────
+//  SVG EXPORT
+// ─────────────────────────────────────────────
+function buildSVGPaths(glyph, opts) {
+  const { rows, cols, gutterX=0, gutterY=0, type, smooth=0, cellColor, ratio } = opts
+  const CS_H = 50, CS_W = CS_H * (ratio/100), r2 = smooth/100
+  const paths = []
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    if (!glyph?.[r]?.[c]) continue
+    const x=c*(CS_W+(gutterX||0)), y=r*(CS_H+(gutterY||0)), cx2=x+CS_W/2, cy2=y+CS_H/2
+    if (type==='rect') {
+      paths.push(`<rect x="${x}" y="${y}" width="${CS_W}" height="${CS_H}" rx="${r2*Math.min(CS_W,CS_H)*0.5}" fill="${cellColor}"/>`)
+    } else if (type==='circle') {
+      paths.push(`<ellipse cx="${cx2}" cy="${cy2}" rx="${CS_W/2}" ry="${CS_H/2}" fill="${cellColor}"/>`)
+    } else if (type==='diamond') {
+      paths.push(`<polygon points="${cx2},${y} ${x+CS_W},${cy2} ${cx2},${y+CS_H} ${x},${cy2}" fill="${cellColor}"/>`)
+    } else if (type==='ring') {
+      const hs=0.65-r2*0.45
+      paths.push(`<path fill-rule="evenodd" fill="${cellColor}" d="M${cx2},${y}a${CS_W/2},${CS_H/2} 0 1,0 .001,0ZM${cx2},${cy2-CS_H/2*hs}a${CS_W/2*hs},${CS_H/2*hs} 0 1,1 .001,0Z"/>`)
+    } else if (type==='star8') {
+      const pts=[], ix=CS_W*(0.2+r2*0.2), iy=CS_H*(0.2+r2*0.2)
+      for(let i=0;i<16;i++){const a=i*Math.PI/8-Math.PI/2,outer=i%2===0;pts.push(`${cx2+Math.cos(a)*(outer?CS_W/2:ix)},${cy2+Math.sin(a)*(outer?CS_H/2:iy)}`)}
+      paths.push(`<polygon points="${pts.join(' ')}" fill="${cellColor}"/>`)
+    } else if (type==='star4') {
+      const pts=[], ix=CS_W*(0.08+r2*0.40), iy=CS_H*(0.08+r2*0.40)
+      for(let i=0;i<8;i++){const a=i*Math.PI/4-Math.PI/2,outer=i%2===0;pts.push(`${cx2+Math.cos(a)*(outer?CS_W/2:ix)},${cy2+Math.sin(a)*(outer?CS_H/2:iy)}`)}
+      paths.push(`<polygon points="${pts.join(' ')}" fill="${cellColor}"/>`)
+    } else if (type==='cross') {
+      const ox=CS_W*0.35*(1-r2*0.3), oy=CS_H*0.35*(1-r2*0.3)
+      paths.push(`<rect x="${x}" y="${y+oy}" width="${CS_W}" height="${CS_H-2*oy}" fill="${cellColor}"/><rect x="${x+ox}" y="${y}" width="${CS_W-2*ox}" height="${CS_H}" fill="${cellColor}"/>`)
+    } else {
+      paths.push(`<rect x="${x}" y="${y}" width="${CS_W}" height="${CS_H}" fill="${cellColor}"/>`)
+    }
+  }
+  return paths.join('\n')
+}
+
+// Convert a single pixel cell to an SVG element string.
+// Shape is defined at origin (0,0); caller wraps in <g transform="translate(x,y)...">.
+function cellShapeSVGStr(w, h, r2, type) {
+  const n = v => parseFloat(v.toFixed(3))
+  const cx = n(w/2), cy = n(h/2)
+  switch (type) {
+    case 'circle':
+      return `<ellipse cx="${cx}" cy="${cy}" rx="${n(w/2)}" ry="${n(h/2)}"/>`
+    case 'diamond': {
+      const hw = cx, hh = cy, k = r2 * 0.45
+      return `<path d="M${n(hw*(1+k))},${n(hh*k)} Q${n(w)},${n(hh)} ${n(hw*(2-k))},${n(hh*(1+k))} Q${n(hw)},${n(h)} ${n(hw*(1-k))},${n(hh*(2-k))} Q0,${n(hh)} ${n(hw*k)},${n(hh*(1-k))} Q${n(hw)},0 Z"/>`
+    }
+    case 'cross': {
+      const ox = n(w*0.35*(1-r2*0.3)), oy = n(h*0.35*(1-r2*0.3))
+      const nw = n(w), nh = n(h)
+      return `<path d="M${ox},0 H${n(w-ox)} V${oy} H${nw} V${n(h-oy)} H${n(w-ox)} V${nh} H${ox} V${n(h-oy)} H0 V${oy} H${ox} Z"/>`
+    }
+    case 'star4': {
+      const ix = w*(0.08+r2*0.40), iy = h*(0.08+r2*0.40)
+      const pts = Array.from({length:8},(_,i)=>{const a=i*Math.PI/4-Math.PI/2,o=i%2===0;return `${n(cx+Math.cos(a)*(o?w/2:ix))},${n(cy+Math.sin(a)*(o?h/2:iy))}`})
+      return `<polygon points="${pts.join(' ')}"/>`
+    }
+    case 'star8': {
+      const ix = w*(0.2+r2*0.2), iy = h*(0.2+r2*0.2)
+      const pts = Array.from({length:16},(_,i)=>{const a=i*Math.PI/8-Math.PI/2,o=i%2===0;return `${n(cx+Math.cos(a)*(o?w/2:ix))},${n(cy+Math.sin(a)*(o?h/2:iy))}`})
+      return `<polygon points="${pts.join(' ')}"/>`
+    }
+    case 'ring': {
+      const hs = 0.65 - r2*0.45
+      return `<path fill-rule="evenodd" d="M${cx},0 a${n(w/2)},${n(h/2)} 0 1,0 .001,0 Z M${cx},${n(cy-h/2*hs)} a${n(w/2*hs)},${n(h/2*hs)} 0 1,1 .001,0 Z"/>`
+    }
+    default: // rect
+      return `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" rx="${n(r2*Math.min(w,h)*0.5)}"/>`
+  }
+}
+
+// Build a fully-vector SVG for pixel mode — no embedded rasters.
+// Fusion layers use SVG feGaussianBlur + feColorMatrix + feFlood metaball filter.
+function buildPixelModeSVG(char) {
+  const layers = [...pixelState.layers].reverse()
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  layers.forEach(layer => {
+    if (layer.visible === false) return
+    const g = layer.glyphs[char]; if (!g) return
+    const { rows: lr, cols: lc, cellW: lw=15, cellH: lh=15 } = layer
+    for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
+      if (!g[r]?.[c]) continue
+      const {x,y} = layerGetCellPos(layer,c,r)
+      minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x+lw);maxY=Math.max(maxY,y+lh)
+    }
+  })
+  if (!isFinite(minX)) return `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"></svg>`
+  const W = Math.ceil(maxX-minX), H = Math.ceil(maxY-minY)
+  const defs=[], groups=[]
+
+  layers.forEach((layer, li) => {
+    if (layer.visible === false) return
+    const g = layer.glyphs[char]; if (!g) return
+    if (!g.some(row=>row?.some(v=>v))) return
+    const { rows:lr, cols:lc, cellW:lw=15, cellH:lh=15, smooth:ls=0, skew:lsk=0, shape, color, opacity, fusion } = layer
+    const r2=ls/100, skewF=lsk/100, str=(layer.fusionStr??50)/100
+
+    const cells=[]
+    for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
+      if (!g[r]?.[c]) continue
+      const {x,y}=layerGetCellPos(layer,c,r)
+      const tx=parseFloat((x-minX).toFixed(3)), ty=parseFloat((y-minY).toFixed(3))
+      const mat = skewF!==0
+        ? `translate(${tx},${ty}) matrix(1,0,${parseFloat(skewF.toFixed(4))},1,0,0)`
+        : `translate(${tx},${ty})`
+      cells.push(`<g transform="${mat}">${cellShapeSVGStr(lw,lh,r2,shape)}</g>`)
+    }
+    if (!cells.length) return
+
+    if (fusion) {
+      const blurPx = parseFloat(Math.max(1, str*Math.min(lw,lh)*1.1).toFixed(2))
+      const thr = 0.55 - str*0.25
+      const scale = 30, offset = parseFloat((-thr*scale).toFixed(3))
+      const fid = `fl${li}`
+      defs.push(
+        `<filter id="${fid}" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">` +
+        `<feGaussianBlur in="SourceGraphic" stdDeviation="${blurPx}" result="b"/>` +
+        `<feColorMatrix in="b" type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 ${scale} ${offset}" result="m"/>` +
+        `<feFlood flood-color="${color}" result="c"/>` +
+        `<feComposite in="c" in2="m" operator="in"/>` +
+        `</filter>`)
+      groups.push(`<g filter="url(#${fid})" opacity="${opacity}" fill="white">\n${cells.join('\n')}\n</g>`)
+    } else {
+      groups.push(`<g fill="${color}" opacity="${opacity}">\n${cells.join('\n')}\n</g>`)
+    }
+  })
+
+  const defsStr = defs.length ? `<defs>\n${defs.join('\n')}\n</defs>\n` : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n${defsStr}${groups.join('\n')}\n</svg>`
+}
+
+function downloadSVG() {
+  const char = CHARSET[currentCharIdx]
+  let svgContent
+  if (currentMode === 'grid') {
+    const glyph = gridGlyphs()[char]
+    const opts = { rows:state.rows, cols:state.cols, gutterX:state.gutterX, gutterY:state.gutterY,
+        type:state.gridType, smooth:state.smooth, cellColor:state.cellColor, ratio:state.ratio }
+    const CS_H=50, CS_W=CS_H*(opts.ratio/100)
+    const W=opts.cols*CS_W+(opts.cols-1)*(opts.gutterX||0)
+    const H=opts.rows*CS_H+(opts.rows-1)*(opts.gutterY||0)
+    svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n${buildSVGPaths(glyph,opts)}\n</svg>`
+  } else {
+    svgContent = buildPixelModeSVG(char)
+  }
+  const blob=new Blob([svgContent],{type:'image/svg+xml'})
+  const url=URL.createObjectURL(blob)
+  const a=document.createElement('a'); a.href=url; a.download=`${getCurrentDocName()}-${char==='/'?'slash':char}.svg`; a.click()
+  URL.revokeObjectURL(url); setStatus('SVG exported: '+char)
+}
+
+function downloadPNG() {
+  const char = CHARSET[currentCharIdx]
+  const fname = `${getCurrentDocName()}-${char === '/' ? 'slash' : char}.png`
+  const triggerBlob = (cvs) => {
+    cvs.toBlob(blob => {
+      if (!blob) { setStatus('PNG export failed'); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = fname
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
+      setStatus('PNG exported: ' + char)
+    }, 'image/png')
+  }
+  if (currentMode !== 'pixel') {
+    // Grid mode: render current glyph to an offscreen canvas (avoids taint issues)
+    const offG = document.createElement('canvas')
+    offG.width = canvas.width; offG.height = canvas.height
+    const gCtx = offG.getContext('2d')
+    gCtx.drawImage(canvas, 0, 0)
+    triggerBlob(offG); return
+  }
+  // Pixel mode: render character at 4× resolution with padding
+  const scale = 4
+  const result = pixelRenderCharToCanvas(char, scale)
+  if (!result) { setStatus('Nothing to export'); return }
+  const { canvas: pxCanvas } = result
+  const pad = Math.round(4 * scale)
+  const out = document.createElement('canvas')
+  out.width = pxCanvas.width + pad * 2; out.height = pxCanvas.height + pad * 2
+  out.getContext('2d').drawImage(pxCanvas, pad, pad)
+  triggerBlob(out)
+}
+
+function loadScript(src) {
+  return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s) })
+}
+
+// ─────────────────────────────────────────────
+//  FONT EXPORT
+// ─────────────────────────────────────────────
+const OPENTYPE_CDN = 'https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js'
+let _fexFmt = 'otf', _fexChars = 'designed'
+
+function openFontExportModal() {
+  document.getElementById('font-export-name').value = getCurrentDocName()
+  _fexFmt = 'otf'; _fexChars = 'designed'
+  document.querySelectorAll('#font-export-modal .fopt').forEach(b => {
+    b.classList.toggle('active',
+      (b.closest('#fex-chars-opts') ? b.dataset.val === 'designed' : b.dataset.val === 'otf'))
+  })
+  _updateFexInfo()
+  document.getElementById('font-export-modal').style.display = 'flex'
+}
+
+function closeFontExportModal() {
+  document.getElementById('font-export-modal').style.display = 'none'
+}
+
+function selectFontOpt(btn, group) {
+  btn.closest('.fex-opts').querySelectorAll('.fopt').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  if (group === 'fmt') _fexFmt = btn.dataset.val
+  else _fexChars = btn.dataset.val
+  _updateFexInfo()
+}
+
+function _fexGetChars() {
+  if (currentMode !== 'pixel') return []
+  const pool = _fexChars === 'latin' ? CHARSET_LATIN
+              : _fexChars === 'korean' ? CHARSET_KOREAN
+              : CHARSET
+  if (_fexChars === 'designed') {
+    return CHARSET.filter(c => pixelState.layers.some(l => {
+      const g = l.glyphs[c]; return g?.some(row => row?.some(v => v))
+    }))
+  }
+  return pool
+}
+
+function _updateFexInfo() {
+  const el = document.getElementById('font-export-info'); if (!el) return
+  if (currentMode !== 'pixel') { el.textContent = 'Switch to Pixel mode to export font'; return }
+  const chars = _fexGetChars()
+  const designed = chars.filter(c => pixelState.layers.some(l => {
+    const g = l.glyphs[c]; return g?.some(row => row?.some(v => v))
+  }))
+  el.textContent = `${chars.length} glyphs (${designed.length} designed, ${chars.length - designed.length} blank)`
+}
+
+function _pixelCharBBox(char) {
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity
+  for (const layer of pixelState.layers) {
+    if (layer.visible === false) continue
+    const g = layer.glyphs[char]; if (!g) continue
+    const { cellW:lw=15, cellH:lh=15, rows:lr, cols:lc } = layer
+    for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
+      if (!g[r]?.[c]) continue
+      const {x,y} = layerGetCellPos(layer,c,r)
+      minX=Math.min(minX,x); minY=Math.min(minY,y)
+      maxX=Math.max(maxX,x+lw); maxY=Math.max(maxY,y+lh)
+    }
+  }
+  return isFinite(minX) ? { minX, minY, w:maxX-minX, h:maxY-minY } : null
+}
+
+function _charGlyphName(char) {
+  const MAP = {
+    ' ':'space','!':'exclam','"':'quotedbl','#':'numbersign','$':'dollar',
+    '%':'percent','&':'ampersand',"'":'quotesingle','(':'parenleft',')':'parenright',
+    '*':'asterisk','+':'plus',',':'comma','-':'hyphen','.':'period','/':'slash',
+    ':':'colon',';':'semicolon','<':'less','=':'equal','>':'greater','?':'question',
+    '@':'at','[':'bracketleft','\\':'backslash',']':'bracketright','^':'asciicircum',
+    '_':'underscore','`':'grave','{':'braceleft','|':'bar','}':'braceright','~':'tilde'
+  }
+  if (MAP[char]) return MAP[char]
+  const cp = char.codePointAt(0)
+  if ((cp>=65&&cp<=90)||(cp>=97&&cp<=122)) return char
+  if (cp>=48&&cp<=57) return `digit${char}`
+  return `uni${cp.toString(16).toUpperCase().padStart(4,'0')}`
+}
+
+function _addGlyphShapes(path, char, bbox, scale, ASC) {
+  const { minX, minY } = bbox
+  const K = 0.5522847498
+
+  for (const layer of [...pixelState.layers].reverse()) {
+    if (layer.visible === false) continue
+    const g = layer.glyphs[char]; if (!g) continue
+    const { cellW:cw=15, cellH:ch=15, rows:lr, cols:lc, smooth:ls=0, shape='rect' } = layer
+    const r2 = ls / 100
+
+    for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
+      if (!g[r]?.[c]) continue
+      const {x,y} = layerGetCellPos(layer,c,r)
+      // Map screen coords (Y-down) → font coords (Y-up)
+      const fxL = (x - minX) * scale
+      const fxR = fxL + cw * scale
+      const fyT = ASC - (y - minY) * scale        // top = high Y in font
+      const fyB = ASC - (y - minY + ch) * scale   // bottom = low Y in font
+      const fw = cw * scale, fh = ch * scale
+      const fcx = (fxL + fxR) * 0.5, fcy = (fyT + fyB) * 0.5
+      const frx = fw * 0.5, fry = fh * 0.5
+
+      switch (shape) {
+        case 'circle':
+          // Ellipse as 4 cubic beziers, CW in Y-up (filled outer contour)
+          path.moveTo(fxR, fcy)
+          path.bezierCurveTo(fxR, fcy+fry*K, fcx+frx*K, fyT, fcx, fyT)
+          path.bezierCurveTo(fcx-frx*K, fyT, fxL, fcy+fry*K, fxL, fcy)
+          path.bezierCurveTo(fxL, fcy-fry*K, fcx-frx*K, fyB, fcx, fyB)
+          path.bezierCurveTo(fcx+frx*K, fyB, fxR, fcy-fry*K, fxR, fcy)
+          path.close()
+          break
+
+        case 'diamond':
+          path.moveTo(fcx, fyT)
+          path.lineTo(fxR, fcy)
+          path.lineTo(fcx, fyB)
+          path.lineTo(fxL, fcy)
+          path.close()
+          break
+
+        case 'cross': {
+          const ox = fw * 0.35 * (1 - r2 * 0.3)
+          const oy = fh * 0.35 * (1 - r2 * 0.3)
+          // Reverse winding vs SVG (screen CW → font CCW → reverse → font CW)
+          path.moveTo(fxL+ox, fyT-oy)
+          path.lineTo(fxL, fyT-oy)
+          path.lineTo(fxL, fyB+oy)
+          path.lineTo(fxL+ox, fyB+oy)
+          path.lineTo(fxL+ox, fyB)
+          path.lineTo(fxR-ox, fyB)
+          path.lineTo(fxR-ox, fyB+oy)
+          path.lineTo(fxR, fyB+oy)
+          path.lineTo(fxR, fyT-oy)
+          path.lineTo(fxR-ox, fyT-oy)
+          path.lineTo(fxR-ox, fyT)
+          path.lineTo(fxL+ox, fyT)
+          path.close()
+          break
+        }
+
+        case 'star4':
+        case 'star8': {
+          const nPts = shape === 'star4' ? 8 : 16
+          const ix = (shape==='star4' ? fw*(0.08+r2*0.40) : fw*(0.2+r2*0.2)) * 0.5
+          const iy = (shape==='star4' ? fh*(0.08+r2*0.40) : fh*(0.2+r2*0.2)) * 0.5
+          // Negate sin to convert Y-down → Y-up (preserves visual shape)
+          const pts = Array.from({length:nPts}, (_,i) => {
+            const a = i * Math.PI * 2 / nPts - Math.PI / 2
+            const outer = i % 2 === 0
+            return [fcx + Math.cos(a) * (outer ? frx : ix),
+                    fcy - Math.sin(a) * (outer ? fry : iy)]
+          })
+          path.moveTo(pts[0][0], pts[0][1])
+          for (let i=1;i<pts.length;i++) path.lineTo(pts[i][0], pts[i][1])
+          path.close()
+          break
+        }
+
+        case 'ring': {
+          const hs = 0.65 - r2 * 0.45
+          // Outer ellipse CW in Y-up
+          path.moveTo(fxR, fcy)
+          path.bezierCurveTo(fxR, fcy+fry*K, fcx+frx*K, fyT, fcx, fyT)
+          path.bezierCurveTo(fcx-frx*K, fyT, fxL, fcy+fry*K, fxL, fcy)
+          path.bezierCurveTo(fxL, fcy-fry*K, fcx-frx*K, fyB, fcx, fyB)
+          path.bezierCurveTo(fcx+frx*K, fyB, fxR, fcy-fry*K, fxR, fcy)
+          path.close()
+          // Inner ellipse CCW in Y-up (hole)
+          const irx = frx * hs, iry = fry * hs
+          path.moveTo(fcx+irx, fcy)
+          path.bezierCurveTo(fcx+irx, fcy-iry*K, fcx+irx*K, fcy-iry, fcx, fcy-iry)
+          path.bezierCurveTo(fcx-irx*K, fcy-iry, fcx-irx, fcy-iry*K, fcx-irx, fcy)
+          path.bezierCurveTo(fcx-irx, fcy+iry*K, fcx-irx*K, fcy+iry, fcx, fcy+iry)
+          path.bezierCurveTo(fcx+irx*K, fcy+iry, fcx+irx, fcy+iry*K, fcx+irx, fcy)
+          path.close()
+          break
+        }
+
+        default: { // rect with optional rounded corners
+          const rr = r2 * Math.min(fw, fh) * 0.5
+          if (rr < 1) {
+            path.moveTo(fxL, fyB)
+            path.lineTo(fxR, fyB)
+            path.lineTo(fxR, fyT)
+            path.lineTo(fxL, fyT)
+            path.close()
+          } else {
+            path.moveTo(fxL+rr, fyB)
+            path.lineTo(fxR-rr, fyB)
+            path.bezierCurveTo(fxR-rr+K*rr, fyB, fxR, fyB+K*rr, fxR, fyB+rr)
+            path.lineTo(fxR, fyT-rr)
+            path.bezierCurveTo(fxR, fyT-rr+K*rr, fxR-K*rr, fyT, fxR-rr, fyT)
+            path.lineTo(fxL+rr, fyT)
+            path.bezierCurveTo(fxL+rr-K*rr, fyT, fxL, fyT-K*rr, fxL, fyT-rr)
+            path.lineTo(fxL, fyB+rr)
+            path.bezierCurveTo(fxL, fyB+rr-K*rr, fxL+K*rr, fyB, fxL+rr, fyB)
+            path.close()
+          }
+        }
+      }
+    }
+  }
+}
+
+async function doFontExport() {
+  if (currentMode !== 'pixel') { setStatus('请切换到 Pixel 模式再导出字体'); return }
+  const chars = _fexGetChars()
+  if (!chars.length) { setStatus('没有可导出的字符'); return }
+
+  if (!window.opentype) {
+    setStatus('正在加载字体引擎…')
+    try { await loadScript(OPENTYPE_CDN) }
+    catch(e) { setStatus('字体引擎加载失败，请检查网络连接'); return }
+  }
+  if (!window.opentype) { setStatus('字体引擎加载失败'); return }
+
+  setStatus('正在构建字体…')
+  const rawName = (document.getElementById('font-export-name').value.trim() || getCurrentDocName())
+  const fontName = rawName.replace(/[^\w\s\-]/g, '').trim() || 'MyFont'
+
+  // Compute bounding boxes & global scale
+  let globalH = 0
+  const bboxes = {}
+  for (const char of chars) {
+    const bb = _pixelCharBBox(char)
+    if (bb) { bboxes[char] = bb; globalH = Math.max(globalH, bb.h) }
+  }
+
+  const UPM = 1000, ASC = 800, DESC = -200
+  const scale = globalH > 0 ? ASC / globalH : 1
+
+  // Compute advance widths; find default from designed chars
+  const advMap = {}
+  let totalAdv = 0, nDesigned = 0
+  for (const char of chars) {
+    const bb = bboxes[char]
+    if (bb) {
+      advMap[char] = Math.round(bb.w * scale + 50)
+      totalAdv += advMap[char]; nDesigned++
+    }
+  }
+  const defaultAdv = nDesigned > 0 ? Math.round(totalAdv / nDesigned) : 500
+
+  // .notdef: simple box outline
+  const ndAdv = defaultAdv
+  const ndPath = new opentype.Path()
+  const nm = 60, nk = 5
+  ndPath.moveTo(nm, nm); ndPath.lineTo(nm, ASC-nm); ndPath.lineTo(ndAdv-nm, ASC-nm); ndPath.lineTo(ndAdv-nm, nm); ndPath.close()
+  ndPath.moveTo(nm+nk, nm+nk); ndPath.lineTo(ndAdv-nm-nk, nm+nk); ndPath.lineTo(ndAdv-nm-nk, ASC-nm-nk); ndPath.lineTo(nm+nk, ASC-nm-nk); ndPath.close()
+
+  const glyphs = [new opentype.Glyph({ name:'.notdef', unicode:0, advanceWidth:ndAdv, path:ndPath })]
+
+  for (const char of chars) {
+    const bb = bboxes[char]
+    const path = new opentype.Path()
+    if (bb) _addGlyphShapes(path, char, bb, scale, ASC)
+    glyphs.push(new opentype.Glyph({
+      name: _charGlyphName(char),
+      unicode: char.codePointAt(0),
+      advanceWidth: advMap[char] ?? defaultAdv,
+      path
+    }))
+  }
+
+  const font = new opentype.Font({
+    familyName: fontName, styleName: 'Regular',
+    unitsPerEm: UPM, ascender: ASC, descender: DESC,
+    glyphs
+  })
+
+  const ext = _fexFmt === 'ttf' ? 'ttf' : 'otf'
+  font.download(`${fontName}.${ext}`)
+  setStatus(`字体已导出：${chars.length} 个字符`)
+  closeFontExportModal()
+}
+
+// ─────────────────────────────────────────────
+//  CHARACTER GRID
+// ─────────────────────────────────────────────
+const LATIN_GROUPS = [
+  { label:'Uppercase', chars:CHARSET_LATIN.slice(0,26) },
+  { label:'Lowercase', chars:CHARSET_LATIN.slice(26,52) },
+  { label:'Numbers',   chars:CHARSET_LATIN.slice(52,62) },
+  { label:'Symbols',   chars:CHARSET_LATIN.slice(62) },
+]
+const KOREAN_GROUPS = [
+  { label:'기본자음', chars:'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ'.split('') },
+  { label:'쌍자음',   chars:'ㄲㄸㅃㅆㅉ'.split('') },
+  { label:'겹받침',   chars:'ㄳㄵㄶㄺㄻㄼㄽㄾㄿㅀㅄ'.split('') },
+  { label:'기본모음', chars:'ㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣ'.split('') },
+  { label:'복합모음', chars:'ㅐㅒㅔㅖㅘㅙㅚㅝㅞㅟㅢ'.split('') },
+]
+let activeTab = 'latin'
+
+function makeCharCell(char, idx) {
+  const cell = document.createElement('div')
+  cell.className = 'char-cell'+(idx===currentCharIdx?' active':'')
+  cell.dataset.char = char
+  const cnv = document.createElement('canvas'); cell.appendChild(cnv)
+  const lbl = document.createElement('span'); lbl.className='char-cell-label'; lbl.textContent=char; cell.appendChild(lbl)
+  cell.addEventListener('click', ()=>{
+    currentCharIdx = idx
+    const disp = document.getElementById('current-char-display')
+    if (disp) disp.textContent = char
+    if (currentMode==='grid') gridEnsureGlyphSize(); else pixelEnsureGlyphSize()
+    resizeCanvas(); renderMainCanvas(null); updateActiveCharCell(); setStatus('Editing: '+char)
+  })
+  return cell
+}
+
+function makeGroupLabel(text, count) {
+  const div = document.createElement('div'); div.className='char-group-label'; div.textContent=text
+  const span = document.createElement('span'); span.className='char-group-count'; span.textContent=count; div.appendChild(span)
+  return div
+}
+
+function buildLatinGrid() {
+  const grid = document.getElementById('char-grid'); grid.innerHTML=''
+  let offset=0
+  LATIN_GROUPS.forEach(g=>{ grid.appendChild(makeGroupLabel(g.label,g.chars.length)); g.chars.forEach(ch=>grid.appendChild(makeCharCell(ch,offset++))) })
+  setTimeout(()=>renderAllThumbnails(), 0)
+}
+
+function buildKoreanGrid() {
+  const grid = document.getElementById('char-grid'); grid.innerHTML=''
+  let offset=CHARSET_LATIN.length
+  KOREAN_GROUPS.forEach(g=>{ grid.appendChild(makeGroupLabel(g.label,g.chars.length)); g.chars.forEach(ch=>grid.appendChild(makeCharCell(ch,offset++))) })
+  setTimeout(()=>renderAllThumbnails(), 0)
+}
+
+function buildCharGrid() { activeTab==='latin' ? buildLatinGrid() : buildKoreanGrid() }
+
+function switchCharTab(tab) {
+  activeTab=tab
+  document.getElementById('tab-latin').classList.toggle('active',tab==='latin')
+  document.getElementById('tab-korean').classList.toggle('active',tab==='korean')
+  buildCharGrid(); updateGlyphCount()
+}
+
+// ─────────────────────────────────────────────
+//  KEYBOARD
+// ─────────────────────────────────────────────
+document.addEventListener('keydown', e=>{
+  if (e.key==='Escape' && previewOpen) { togglePreview(); return }
+  if ((e.ctrlKey||e.metaKey)&&(e.key==='='||e.key==='+')) { e.preventDefault(); zoomIn(); return }
+  if ((e.ctrlKey||e.metaKey)&&e.key==='-') { e.preventDefault(); zoomOut(); return }
+  if ((e.ctrlKey||e.metaKey)&&e.key==='0') { e.preventDefault(); resetZoom(); return }
+  if ((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey) { e.preventDefault(); undo(); return }
+  if ((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))) { e.preventDefault(); redo(); return }
+  if (e.target.tagName==='INPUT') return
+  if (e.key==='Delete'||e.key==='Backspace') { clearGlyph(); return }
+})
+
+// ─────────────────────────────────────────────
+//  SUBSCRIPTION
+// ─────────────────────────────────────────────
+function isPro() {
+  if (!currentProfile) return false
+  if (currentProfile.subscription_status !== 'pro') return false
+  const exp = currentProfile.subscription_expires_at
+  return !exp || new Date(exp) > new Date()
+}
+
+let currentSubTab = 'monthly'
+
+function openSubscriptionModal() {
+  closeUserDropdown()
+  const modal = document.getElementById('sub-modal')
+  if (!modal) return
+  modal.classList.add('open')
+  renderSubscriptionModal()
+}
+function closeSubscriptionModal() {
+  document.getElementById('sub-modal')?.classList.remove('open')
+}
+
+function renderSubscriptionModal() {
+  const statusEl    = document.getElementById('sub-current-status')
+  const managePanel = document.getElementById('sub-manage-panel')
+  const plansPanel  = document.getElementById('sub-plans')
+  if (!statusEl) return
+
+  const isExpired = currentProfile?.subscription_status === 'pro' && !isPro()
+
+  if (isPro()) {
+    const exp  = new Date(currentProfile.subscription_expires_at)
+    const fmt  = exp.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+    const days = Math.max(0, Math.ceil((exp - new Date()) / 86400000))
+    const planLabel = currentProfile.subscription_plan === 'yearly' ? 'Pro Yearly' : 'Pro Monthly'
+    statusEl.innerHTML = `<span class="sub-badge pro">PRO</span>`
+    if (managePanel) managePanel.style.display = 'block'
+    if (plansPanel)  plansPanel.style.display  = 'none'
+    const daysEl   = document.getElementById('sub-manage-days')
+    const planEl   = document.getElementById('sub-manage-plan')
+    const expiryEl = document.getElementById('sub-manage-expiry')
+    const renewBtn = document.getElementById('sub-renew-btn')
+    if (daysEl)   daysEl.textContent   = days
+    if (planEl)   planEl.textContent   = planLabel
+    if (expiryEl) expiryEl.textContent = fmt
+    if (renewBtn) { renewBtn.textContent = 'Renew Now'; renewBtn.className = 'btn primary' }
+  } else if (isExpired) {
+    const exp  = new Date(currentProfile.subscription_expires_at)
+    const fmt  = exp.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+    statusEl.innerHTML = `<span class="sub-badge free">EXPIRED</span>`
+    if (managePanel) managePanel.style.display = 'block'
+    if (plansPanel)  plansPanel.style.display  = 'none'
+    const daysEl   = document.getElementById('sub-manage-days')
+    const planEl   = document.getElementById('sub-manage-plan')
+    const expiryEl = document.getElementById('sub-manage-expiry')
+    if (daysEl)   { daysEl.textContent = '0'; daysEl.style.color = '#e05555' }
+    if (planEl)   planEl.textContent   = currentProfile.subscription_plan === 'yearly' ? 'Pro Yearly' : 'Pro Monthly'
+    if (expiryEl) expiryEl.textContent = `${fmt} (expired)`
+    const renewBtn = document.getElementById('sub-renew-btn')
+    if (renewBtn) { renewBtn.textContent = 'Renew Subscription'; renewBtn.className = 'btn primary' }
+  } else {
+    statusEl.innerHTML = ''
+    if (managePanel) managePanel.style.display = 'none'
+    if (plansPanel)  plansPanel.style.display  = 'flex'
+  }
+}
+
+function renewSubscription() {
+  const plan = currentProfile?.subscription_plan || 'monthly'
+  currentSubTab = plan
+  document.querySelectorAll('.sub-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.plan === plan))
+  startTossPaymentDirect()
+}
+
+async function startTossPaymentDirect() {
+  if (!currentUser) { closeSubscriptionModal(); openAuthModal(); return }
+  if (!window.TossPayments) {
+    setStatus('Loading payment SDK…')
+    await loadScript('https://js.tosspayments.com/v1/payment')
+  }
+  const tossPayments = TossPayments(import.meta.env.VITE_TOSS_CLIENT_KEY)
+  const amount    = currentSubTab === 'yearly' ? 50000 : 5000
+  const orderId   = `dottypo_${Date.now()}_${currentUser.id.slice(0, 8)}`
+  const orderName = currentSubTab === 'yearly' ? 'dottypo Pro Yearly' : 'dottypo Pro Monthly'
+  const base      = window.location.origin + window.location.pathname
+  tossPayments.requestPayment('카드', {
+    amount, orderId, orderName,
+    customerEmail: currentUser.email,
+    successUrl: `${base}?toss_plan=${currentSubTab}&toss_order=${orderId}`,
+    failUrl:    `${base}?toss_fail=1`,
+  })
+}
+
+function selectPlanTab(plan) {
+  currentSubTab = plan
+  document.querySelectorAll('.sub-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.plan === plan))
+  const priceEl = document.getElementById('sub-pro-price')
+  if (priceEl) priceEl.innerHTML = plan === 'yearly' ? '₩50,000<span>/yr</span>' : '₩5,000<span>/mo</span>'
+}
+
+async function startTossPayment() {
+  if (!currentUser) { closeSubscriptionModal(); openAuthModal(); return }
+  if (isPro()) return
+  if (!window.TossPayments) {
+    setStatus('Loading payment SDK…')
+    await loadScript('https://js.tosspayments.com/v1/payment')
+  }
+  const tossPayments = TossPayments(import.meta.env.VITE_TOSS_CLIENT_KEY)
+  const amount    = currentSubTab === 'yearly' ? 50000 : 5000
+  const orderId   = `dottypo_${Date.now()}_${currentUser.id.slice(0, 8)}`
+  const orderName = currentSubTab === 'yearly' ? 'dottypo Pro Yearly' : 'dottypo Pro Monthly'
+  const base      = window.location.origin + window.location.pathname
+  tossPayments.requestPayment('카드', {
+    amount,
+    orderId,
+    orderName,
+    customerEmail: currentUser.email,
+    successUrl: `${base}?toss_plan=${currentSubTab}&toss_order=${orderId}`,
+    failUrl:    `${base}?toss_fail=1`,
+  })
+}
+
+async function handleTossReturn() {
+  const params     = new URLSearchParams(window.location.search)
+  const paymentKey = params.get('paymentKey')
+  const orderId    = params.get('orderId')
+  const amount     = params.get('amount')
+  const plan       = params.get('toss_plan')
+  const fail       = params.get('toss_fail')
+  window.history.replaceState({}, '', window.location.pathname)
+  if (fail) { setStatus('Payment cancelled'); return }
+  if (!paymentKey || !orderId || !amount || !plan || !currentUser) return
+  setStatus('Processing payment…')
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/confirm-billing`,
+      {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ paymentKey, orderId, amount: Number(amount), plan, userId: currentUser.id }),
+      }
+    )
+    const raw    = await res.text()
+    const result = JSON.parse(raw)
+    if (result.success) {
+      const p = await fetchProfile(currentUser.id)
+      currentProfile = p
+      updateAuthUI()
+      setStatus('Subscription activated!')
+      alert('Subscription activated! 🎉')
+    } else {
+      const msg = result.error?.message || JSON.stringify(result.error)
+      setStatus('Payment failed: ' + msg)
+      alert('Payment failed: ' + msg)
+    }
+  } catch (e) {
+    alert('Payment error: ' + e.message)
+  }
+}
+
+// ─────────────────────────────────────────────
+//  AUTH & CLOUD
+// ─────────────────────────────────────────────
+function updateAuthUI() {
+  const btn     = document.getElementById('auth-btn')
+  const info    = document.getElementById('user-info')
+  const avatarBtn = document.getElementById('user-avatar-btn')
+  const dropName  = document.getElementById('dropdown-username')
+  const dropEmail = document.getElementById('dropdown-email')
+  if (currentUser) {
+    if (btn)  btn.style.display = 'none'
+    if (info) info.style.display = 'flex'
+    const initials = currentProfile?.username
+      ? currentProfile.username.slice(0, 2).toUpperCase()
+      : currentUser.email.slice(0, 2).toUpperCase()
+    if (avatarBtn) avatarBtn.textContent = initials
+    if (dropName)  dropName.textContent  = currentProfile?.username || '—'
+    if (dropEmail) dropEmail.textContent = currentUser.email
+    // plan badge
+    const badge = document.getElementById('dropdown-plan-badge')
+    if (badge) {
+      badge.textContent = isPro() ? 'PRO' : 'FREE'
+      badge.className   = isPro() ? 'sub-badge pro' : 'sub-badge free'
+    }
+    // upgrade vs manage section
+    const subSection = document.getElementById('dropdown-sub-section')
+    const proSection = document.getElementById('dropdown-pro-section')
+    const expiryText = document.getElementById('dropdown-expiry-text')
+    if (isPro()) {
+      if (subSection) subSection.style.display = 'none'
+      if (proSection) proSection.style.display = 'block'
+      if (expiryText && currentProfile?.subscription_expires_at) {
+        const exp = new Date(currentProfile.subscription_expires_at)
+        const fmt = exp.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+        expiryText.textContent = `Renews ${fmt}`
+      }
+    } else {
+      if (subSection) subSection.style.display = 'block'
+      if (proSection) proSection.style.display = 'none'
+      // expired but was pro
+      if (currentProfile?.subscription_status === 'pro' && expiryText) {
+        expiryText.textContent = 'Subscription expired'
+        if (proSection) proSection.style.display = 'block'
+        if (subSection) subSection.style.display = 'none'
+      }
+    }
+  } else {
+    if (btn)  btn.style.display = 'flex'
+    if (info) info.style.display = 'none'
+    closeUserDropdown()
+  }
+}
+
+function toggleUserDropdown() {
+  const dd = document.getElementById('user-dropdown')
+  if (!dd) return
+  dd.classList.toggle('open')
+}
+function closeUserDropdown() {
+  const dd = document.getElementById('user-dropdown')
+  if (dd) dd.classList.remove('open')
+}
+
+async function fetchProfile(userId) {
+  const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
+  return data || null
+}
+
+async function signUp() {
+  const username = document.getElementById('auth-username').value.trim()
+  const email    = document.getElementById('auth-email').value.trim()
+  const pw       = document.getElementById('auth-password').value
+  if (!username) return setAuthError('Please enter a username')
+  if (!email || !pw) return setAuthError('Please fill in all fields')
+  setAuthError(''); setAuthLoading(true)
+  const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { data: { username } } })
+  setAuthLoading(false)
+  if (error) return setAuthError(error.message)
+  setAuthError('Account created! You can now log in.', 'ok')
+}
+
+async function signIn() {
+  let identifier = document.getElementById('auth-email').value.trim()
+  const pw       = document.getElementById('auth-password').value
+  if (!identifier || !pw) return setAuthError('Please fill in all fields')
+  setAuthError(''); setAuthLoading(true)
+  let email = identifier
+  if (!identifier.includes('@')) {
+    try {
+      const lookupPromise = supabase.from('profiles').select('email').eq('username', identifier).single()
+      const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000))
+      const { data: prof, error: lookupErr } = await Promise.race([lookupPromise, timeoutPromise])
+      if (lookupErr || !prof) { setAuthLoading(false); return setAuthError('Username not found') }
+      email = prof.email
+    } catch {
+      setAuthLoading(false)
+      return setAuthError('Username lookup timed out — please use your email instead')
+    }
+  }
+  const { data: signInData, error } = await supabase.auth.signInWithPassword({ email, password: pw })
+  setAuthLoading(false)
+  if (error) return setAuthError(error.message)
+  currentUser = signInData.user
+  updateAuthUI()
+  closeAuthModal()
+  fetchProfile(currentUser.id).then(p => { currentProfile = p; updateAuthUI() })
+}
+
+async function signOut() {
+  clearTimeout(autoSaveTimer)
+  autoSaveTimer = null
+  await supabase.auth.signOut()
+  currentUser = null
+  currentProfile = null
+  currentCloudDocId = null
+  GRID_TYPES.forEach(t => { state.glyphsByType[t] = makeGlyphStore() })
+  pixelState.layers = [makePixelLayer()]
+  pixelState.activeLayerIdx = 0
+  setCurrentDocName('Untitled')
+  updateDocHeader()
+  resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview()
+  closeUserDropdown()
+  updateAuthUI()
+  setStatus('Signed out')
+}
+
+function setAuthError(msg, type = 'err') {
+  const el = document.getElementById('auth-error')
+  if (!el) return
+  el.textContent = msg
+  el.style.color = type === 'ok' ? 'var(--accent)' : '#e05555'
+}
+function setAuthLoading(on) {
+  const btn = document.querySelector('#auth-modal .auth-submit-btn')
+  if (btn) btn.disabled = on
+}
+
+function openAuthModal() {
+  document.getElementById('auth-modal').classList.add('open')
+  setAuthError('')
+}
+function closeAuthModal() {
+  document.getElementById('auth-modal').classList.remove('open')
+}
+function switchAuthTab(tab) {
+  document.getElementById('auth-tab-login').classList.toggle('active', tab === 'login')
+  document.getElementById('auth-tab-register').classList.toggle('active', tab === 'register')
+  const usernameField = document.getElementById('auth-username')
+  const emailField    = document.getElementById('auth-email')
+  const submitBtn     = document.querySelector('#auth-modal .auth-submit-btn')
+  if (tab === 'register') {
+    if (usernameField) usernameField.style.display = 'block'
+    if (emailField) emailField.placeholder = 'Email address'
+    if (submitBtn) submitBtn.textContent = 'Create Account'
+  } else {
+    if (usernameField) usernameField.style.display = 'none'
+    if (emailField) emailField.placeholder = 'Email or username'
+    if (submitBtn) submitBtn.textContent = 'Login'
+  }
+  setAuthError('')
+}
+
+function handleAuthSubmit() {
+  const isRegister = document.getElementById('auth-tab-register')?.classList.contains('active')
+  if (isRegister) signUp(); else signIn()
+}
+
+// ── Cloud document operations ──
+function cloudDocPayload(name) {
+  const isGrid = currentMode === 'grid'
+  return {
+    user_id:    currentUser.id,
+    name,
+    mode:       currentMode,
+    config:     isGrid
+      ? { rows:state.rows, cols:state.cols, gutterX:state.gutterX, gutterY:state.gutterY,
+          ratio:state.ratio, gridType:state.gridType, cellColor:state.cellColor,
+          polar:state.polar, triangular:state.triangular, organic:state.organic }
+      : { showGrid: pixelState.showGrid, gridOpacity: pixelState.gridOpacity,
+          layers: JSON.parse(JSON.stringify(pixelState.layers)),
+          activeLayerIdx: pixelState.activeLayerIdx },
+    glyphs: isGrid ? JSON.parse(JSON.stringify(state.glyphsByType)) : null,
+    updated_at: new Date().toISOString()
+  }
+}
+
+async function cloudSave(name) {
+  if (!currentUser) return false
+  const payload = cloudDocPayload(name)
+  if (currentCloudDocId) {
+    const { error } = await supabase.from('documents').update(payload).eq('id', currentCloudDocId)
+    return !error
+  } else {
+    const { data, error } = await supabase.from('documents').insert(payload).select('id').single()
+    if (data?.id) currentCloudDocId = data.id
+    return !error
+  }
+}
+
+async function cloudLoad(id) {
+  const { data, error } = await supabase.from('documents').select('*').eq('id', id).single()
+  if (error || !data) return null
+  return data
+}
+
+async function cloudDelete(id) {
+  await supabase.from('documents').delete().eq('id', id)
+}
+
+async function cloudFetchList() {
+  if (!currentUser) return []
+  const { data } = await supabase.from('documents').select('id,name,mode,updated_at')
+    .order('updated_at', { ascending: false })
+  return data || []
+}
+
+// ── Override docsSave / docsLoad / docsDelete / renderDocList ──
+const _localDocsSave    = docsSave
+const _localDocsLoad    = docsLoad
+const _localDocsDelete  = docsDelete
+const _localRenderDocList = renderDocList
+
+async function docsSaveCloud(name) {
+  setCurrentDocName(name || 'Untitled')
+  updateDocHeader()
+  setStatus('Saving…')
+  const ok = await cloudSave(name || 'Untitled')
+  setStatus(ok ? 'Saved · ' + (name||'Untitled') : 'Save failed, please try again')
+  await renderDocListCloud()
+}
+
+async function docsLoadCloud(id) {
+  setStatus('Loading…')
+  const doc = await cloudLoad(id)
+  if (!doc) return setStatus('Failed to load document')
+  currentCloudDocId = doc.id
+  if (doc.mode !== currentMode) switchMode(doc.mode)
+  if (doc.mode === 'grid') {
+    Object.assign(state, doc.config)
+    migrateGridGlyphs(doc)
+    gridSyncSliders(); setGridType(state.gridType)
+  } else {
+    migratePixelLoad(doc)
+    pixelSyncSliders()
+  }
+  currentCharIdx = 0
+  resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview(); resetZoom()
+  updateActiveCharCell()
+  setCurrentDocName(doc.name); updateDocHeader()
+  setStatus('Loaded: ' + doc.name)
+  closeDocManager()
+}
+
+async function docsRenameCloud(id, oldName) {
+  const item = document.querySelector(`.doc-item[data-id="${id}"]`)
+  if (!item) return
+  const nameEl = item.querySelector('.doc-name')
+  if (!nameEl) return
+
+  const input = document.createElement('input')
+  input.value = oldName
+  input.className = 'doc-rename-input'
+  nameEl.replaceWith(input)
+  input.focus(); input.select()
+
+  // Block clicks/mousedown on input from bubbling to doc-info's docsLoadCloud handler
+  input.addEventListener('click', e => e.stopPropagation())
+  input.addEventListener('mousedown', e => e.stopPropagation())
+
+  let done = false
+  const restore = () => {
+    if (done) return; done = true
+    input.replaceWith(Object.assign(document.createElement('div'), { className: 'doc-name', textContent: oldName }))
+  }
+  const commit = async () => {
+    if (done) return; done = true
+    const newName = input.value.trim() || oldName
+    input.replaceWith(Object.assign(document.createElement('div'), { className: 'doc-name', textContent: newName }))
+    if (newName !== oldName) {
+      await supabase.from('documents').update({ name: newName }).eq('id', id)
+      if (id === currentCloudDocId) { setCurrentDocName(newName); updateDocHeader() }
+      renderDocListCloud()
+    }
+  }
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit() }
+    if (e.key === 'Escape') { restore() }
+  })
+  input.addEventListener('blur', () => setTimeout(commit, 120))
+}
+
+async function docsDeleteCloud(id) {
+  if (!confirm('Delete this document?')) return
+  if (id === currentCloudDocId) { currentCloudDocId = null; setCurrentDocName('Untitled'); updateDocHeader() }
+  await cloudDelete(id)
+  await renderDocListCloud()
+  setStatus('Document deleted')
+}
+
+async function renderDocListCloud() {
+  const list = document.getElementById('doc-list'); if (!list) return
+  const docs = await cloudFetchList()
+  if (!docs.length) {
+    list.innerHTML = `<div class="doc-empty">No saved documents yet. Enter a name above and click Save.</div>`
+    return
+  }
+  list.innerHTML = docs.map(d => `
+    <div class="doc-item${d.id === currentCloudDocId ? ' active' : ''}" data-id="${d.id}">
+      <div class="doc-info" onclick="docsLoadCloud('${d.id}')">
+        <div class="doc-name">${d.name}</div>
+        <div class="doc-meta"><span class="doc-mode-tag">${d.mode.toUpperCase()}</span>${new Date(d.updated_at).toLocaleString()}</div>
+      </div>
+      <div class="doc-actions">
+        <button class="doc-action-btn" onclick="event.stopPropagation();docsRenameCloud('${d.id}','${d.name.replace(/'/g,"\\'")}' )" title="Rename">✎</button>
+        <button class="doc-action-btn del" onclick="docsDeleteCloud('${d.id}')" title="Delete">✕</button>
+      </div>
+    </div>`).join('')
+}
+
+// Patch: override save/load/renderDocList when user is logged in
+function patchedDocsSave(name) {
+  if (currentUser) return docsSaveCloud(name)
+  return _localDocsSave(name)
+}
+function patchedDocsLoad(id) {
+  if (currentUser) return docsLoadCloud(id)
+  return _localDocsLoad(id)
+}
+function patchedDocsDelete(id) {
+  if (currentUser) return docsDeleteCloud(id)
+  return _localDocsDelete(id)
+}
+function patchedRenderDocList() {
+  if (currentUser) return renderDocListCloud()
+  return _localRenderDocList()
+}
+
+let _newFilePendingMode = 'grid'
+
+function openNewFileModal() {
+  if (!currentUser) { openAuthModal(); return }
+  _newFilePendingMode = currentMode
+  document.querySelectorAll('.nf-mode-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === _newFilePendingMode))
+  document.getElementById('new-file-name').value = ''
+  document.getElementById('new-file-modal').style.display = 'flex'
+  setTimeout(() => document.getElementById('new-file-name').focus(), 50)
+}
+
+function closeNewFileModal() {
+  document.getElementById('new-file-modal').style.display = 'none'
+}
+
+function setNewFileMode(mode) {
+  _newFilePendingMode = mode
+  document.querySelectorAll('.nf-mode-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === mode))
+}
+
+async function confirmNewFile() {
+  const name = document.getElementById('new-file-name').value.trim() || 'Untitled'
+  closeNewFileModal()
+  if (!currentUser) return
+  if (!isPro()) {
+    const existing = await cloudFetchList()
+    if (existing.length >= 5) { openSubscriptionModal(); setStatus('Free plan: 5 file limit reached'); return }
+  }
+  if (_newFilePendingMode !== currentMode) switchMode(_newFilePendingMode)
+  currentCloudDocId = null
+  if (_newFilePendingMode === 'pixel') {
+    pixelState.layers = [makePixelLayer()]
+    pixelState.activeLayerIdx = 0
+    renderLayerList(); pixelSyncSliders()
+  } else {
+    GRID_TYPES.forEach(t => { state.glyphsByType[t] = makeGlyphStore() })
+  }
+  currentCharIdx = 0
+  updateActiveCharCell()
+  resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview(); resetZoom()
+  docsSaveCloud(name)
+}
+
+async function saveNewDocPatched() {
+  const inp = document.getElementById('doc-name-input')
+  const name = inp.value.trim() || 'Untitled'
+  inp.value = ''
+  if (currentUser) {
+    if (!isPro()) {
+      const existing = await cloudFetchList()
+      if (existing.length >= 5) {
+        openSubscriptionModal()
+        setStatus('Free plan: 5 file limit reached')
+        return
+      }
+    }
+    // Always create a brand-new document (never overwrite the active one)
+    currentCloudDocId = null
+    if (currentMode === 'pixel') {
+      pixelState.layers = [makePixelLayer()]
+      pixelState.activeLayerIdx = 0
+      renderLayerList()
+    } else {
+      GRID_TYPES.forEach(t => { state.glyphsByType[t] = makeGlyphStore() })
+    }
+    currentCharIdx = 0
+    updateActiveCharCell()
+    resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview(); resetZoom()
+    docsSaveCloud(name)
+  } else {
+    _localDocsSave(name)
+    closeDocManager()
+  }
+}
+
+function openDocManagerPatched() {
+  document.getElementById('doc-manager').classList.add('open')
+  patchedRenderDocList()
+}
+
+// ── Init Supabase auth listener ──
+let _authReady = false
+function initAuth() {
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    currentUser = session?.user || null
+    updateAuthUI()
+    _authReady = true
+    if (currentUser) {
+      const hasTossReturn = new URLSearchParams(window.location.search).get('paymentKey')
+      fetchProfile(currentUser.id).then(p => { currentProfile = p; updateAuthUI() })
+      if (hasTossReturn) {
+        handleTossReturn()
+      }
+    }
+  })
+  supabase.auth.onAuthStateChange((_event, session) => {
+    const wasLoggedOut = !currentUser
+    currentUser = session?.user || null
+    updateAuthUI()
+    if (currentUser) {
+      fetchProfile(currentUser.id).then(p => {
+        currentProfile = p
+        updateAuthUI()
+        setStatus('Signed in as ' + (p?.username || currentUser.email))
+      })
+      if (_authReady && wasLoggedOut) {
+        setTimeout(() => openDocManagerPatched(), 400)
+      }
+    } else {
+      currentProfile = null
+    }
+  })
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#user-info')) closeUserDropdown()
+})
+
+// ─────────────────────────────────────────────
+//  INIT
+function init() {
+  // Debug: log full URL on every load
+  const _dbgParams = new URLSearchParams(window.location.search)
+  console.log('[init] URL params:', window.location.search || '(none)')
+  console.log('[init] authKey:', _dbgParams.get('authKey'), '| toss_plan:', _dbgParams.get('toss_plan'))
+  buildCharGrid()
+  document.getElementById('theme-toggle').innerHTML = SVG_MOON
+  initAuth()
+  setTimeout(() => {
+    resizeCanvas(); renderMainCanvas(null); resetZoom()
+    renderAllThumbnails(); renderPreview()
+    setStatus('Log in to save your work')
+  }, 50)
+}
+
+// ─────────────────────────────────────────────
+//  FULL PREVIEW
+// ─────────────────────────────────────────────
+let previewOpen = false
+
+function togglePreview() {
+  previewOpen = !previewOpen
+  const overlay = document.getElementById('preview-overlay')
+  const btn = document.getElementById('btn-preview')
+  if (!overlay) return
+  overlay.style.display = previewOpen ? 'flex' : 'none'
+  if (btn) btn.classList.toggle('active', previewOpen)
+  if (previewOpen) {
+    setTimeout(() => {
+      const inp = document.getElementById('preview-large-input')
+      if (inp) { inp.value = ''; inp.focus() }
+      renderLargePreview()
+    }, 20)
+  }
+}
+
+function renderLargePreview() {
+  if (!previewOpen) return
+  const inp = document.getElementById('preview-large-input')
+  const pc = document.getElementById('preview-large-canvas')
+  if (!inp || !pc) return
+  // auto-resize textarea
+  inp.style.height = 'auto'; inp.style.height = inp.scrollHeight + 'px'
+  const text = inp.value || ''
+  const targetH  = parseInt(document.getElementById('preview-size-slider')?.value  || 120)
+  const lineHPct = parseInt(document.getElementById('preview-lineh-slider')?.value || 130)
+  const lspc     = parseInt(document.getElementById('preview-lspc-slider')?.value  || 0)
+  const hint = document.getElementById('preview-empty-hint')
+  if (hint) hint.style.opacity = text.length ? '0' : '1'
+  const sizeVal  = document.getElementById('preview-size-val');  if (sizeVal)  sizeVal.textContent  = targetH
+  const linehVal = document.getElementById('preview-lineh-val'); if (linehVal) linehVal.textContent = lineHPct
+  const lspcVal  = document.getElementById('preview-lspc-val');  if (lspcVal)  lspcVal.textContent  = lspc
+  if (currentMode === 'grid') {
+    renderLargePreviewGrid(text, pc, targetH, lineHPct, lspc)
+  } else {
+    renderLargePreviewPixel(text, pc, targetH, lineHPct, lspc)
+  }
+}
+
+function renderLargePreviewGrid(text, pc, targetH, lineHPct = 130, lspc = 0) {
+  const lines = text.split('\n')
+  const lw = GRID_LOGICAL_W(), lh = GRID_LOGICAL_H()
+  const scale = targetH / Math.max(1, lh)
+  const charW = lw * scale
+  const extra = (lspc / 100) * targetH
+  const lineH = targetH * (lineHPct / 100)
+  const totalH = lines.length === 1 ? targetH : (lines.length - 1) * lineH + targetH
+  const maxLineW = Math.max(4, ...lines.map(l => l.length * (charW + extra)))
+  const dpr = window.devicePixelRatio || 1
+  pc.width = maxLineW * dpr; pc.height = totalH * dpr
+  pc.style.width = maxLineW + 'px'; pc.style.height = totalH + 'px'
+  const c2 = pc.getContext('2d')
+  c2.scale(dpr, dpr); c2.clearRect(0, 0, maxLineW, totalH)
+  c2.fillStyle = state.cellColor
+  lines.forEach((line, li) => {
+    const yOff = li * lineH
+    for (let ci = 0; ci < line.length; ci++) {
+      const glyph = gridGlyphs()[line[ci]]; if (!glyph) continue
+      c2.save(); c2.translate(ci * (charW + extra), yOff); c2.scale(scale, scale)
+      for (const { r, c, path } of gridPaths) { if (glyph[r]?.[c]) c2.fill(path) }
+      c2.restore()
+    }
+  })
+}
+
+function renderLargePreviewPixel(text, pc, targetH, lineHPct = 130, lspc = 0) {
+  if (!text) {
+    pc.width = 4; pc.height = targetH; pc.style.width = '4px'; pc.style.height = targetH + 'px'
+    return
+  }
+  const RS = 2
+  const al = pixelActiveLayer()
+  const blankW = al ? (al.cols * (al.cellW ?? 15)) * RS : 60
+  const lines = text.split('\n')
+  // render all unique chars once
+  const uniqueChars = [...new Set(text.replace(/\n/g, ''))]
+  const charMap = new Map(uniqueChars.map(ch => [ch, pixelRenderCharToCanvas(ch, RS)]))
+  const maxH = Math.max(1, ...[...charMap.values()].filter(Boolean).map(r => r.canvas.height))
+  const cssScale = targetH / maxH
+  const extra = (lspc / 100) * targetH
+  const lineH = targetH * (lineHPct / 100)
+  const totalH = lines.length === 1 ? targetH : (lines.length - 1) * lineH + targetH
+  const lineWidths = lines.map(line =>
+    [...line].reduce((s, ch, i) => {
+      const r = charMap.get(ch)
+      return s + (r ? r.canvas.width * cssScale : blankW * cssScale) + (i > 0 ? extra : 0)
+    }, 0))
+  const totalW = Math.max(4, ...lineWidths)
+  const dpr = window.devicePixelRatio || 1
+  pc.width = totalW * dpr; pc.height = totalH * dpr
+  pc.style.width = totalW + 'px'; pc.style.height = totalH + 'px'
+  const c2 = pc.getContext('2d')
+  c2.scale(dpr, dpr); c2.clearRect(0, 0, totalW, totalH)
+  c2.imageSmoothingEnabled = true; c2.imageSmoothingQuality = 'high'
+  lines.forEach((line, li) => {
+    if (!line) return
+    const yOff = li * lineH
+    let x = 0
+    ;[...line].forEach((ch, i) => {
+      const r = charMap.get(ch)
+      if (r) {
+        const dw = r.canvas.width * cssScale, dh = r.canvas.height * cssScale
+        c2.drawImage(r.canvas, x, yOff + (targetH - dh) / 2, dw, dh)
+        x += dw
+      } else {
+        x += blankW * cssScale
+      }
+      if (i < line.length - 1) x += extra
+    })
+  })
+}
+
+// Re-apply zoom on resize so fit-to-view stays correct for both modes
+window.addEventListener('resize', () => {
+  if (currentMode === 'grid') {
+    gridResizeCanvas(); gridRenderMainCanvas(hoveredCell)
+  }
+  applyZoom()
+})
+
+Object.assign(window, {
+  updateParam, setGridType, updateColor, updateGridSpecificParam,
+  updatePixelParam, setPixelType, updatePixelColor,
+  toggleGrid, clearGlyph, randomizeGlyph,
+  prevChar, nextChar, handleLoadFile,
+  downloadSVG, downloadPNG, openFontExportModal, closeFontExportModal, selectFontOpt, doFontExport,
+  zoomIn, zoomOut, resetZoom,
+  toggleTheme, renderPreview, switchCharTab, switchMode,
+  togglePreview, renderLargePreview,
+  openDocManager: openDocManagerPatched,
+  closeDocManager, docsLoad: patchedDocsLoad, docsDelete: patchedDocsDelete,
+  docsDeleteCloud, docsLoadCloud,
+  docsRename, docsRenameCloud, saveNewDoc: saveNewDocPatched,
+  createNewDoc, saveCurrentDoc,
+  openNewFileModal, closeNewFileModal, setNewFileMode, confirmNewFile,
+  openAuthModal, closeAuthModal, switchAuthTab, handleAuthSubmit, signIn, signUp, signOut, toggleUserDropdown,
+  openSubscriptionModal, closeSubscriptionModal, selectPlanTab, startTossPayment, renewSubscription,
+  addPixelLayer, duplicatePixelLayer, removePixelLayer, setActiveLayer, setLayerOpacity, setLayerName,
+  toggleLayerVisible, toggleLayerFusion, moveLayerUp, moveLayerDown,
+  undo, redo, updateGridOpacity
+})
+
+init()
