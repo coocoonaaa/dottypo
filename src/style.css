@@ -1189,12 +1189,12 @@ body.dark .landing::before {
   margin-top: -16px;
 }
 
-/* ── 3-step cards ── */
+/* ── 4-step cards ── */
 .landing-steps {
   display: flex; align-items: stretch; gap: 0;
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: 12px; overflow: hidden;
-  width: min(720px, 90vw);
+  width: min(920px, 92vw);
 }
 .landing-step {
   flex: 1; padding: 20px 22px 22px;
@@ -1225,7 +1225,35 @@ body.dark .landing::before {
   min-height: 72px;
 }
 
-/* card 1 — sliders */
+/* card 1 — shape picker */
+.sa-shapes {
+  display: flex; gap: 10px; align-items: center;
+}
+.sa-shape-opt {
+  width: 36px; height: 36px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.2s, background 0.2s;
+  cursor: default;
+}
+.sa-shape-opt.sa-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.sa-shape-cell {
+  width: 18px; height: 18px;
+  background: var(--text3);
+  transition: background 0.2s, border-radius 0.35s;
+}
+.sa-shape-opt.sa-active .sa-shape-cell { background: var(--accent); }
+/* shape variants */
+.sa-shape-sq  .sa-shape-cell { border-radius: 2px; }
+.sa-shape-rd  .sa-shape-cell { border-radius: 6px; }
+.sa-shape-ci  .sa-shape-cell { border-radius: 50%; }
+.sa-shape-dm  .sa-shape-cell { border-radius: 2px; transform: rotate(45deg); width: 14px; height: 14px; }
+
+/* card 2 — sliders */
 .sa-sliders {
   display: flex; flex-direction: column; gap: 8px;
   width: 100%;

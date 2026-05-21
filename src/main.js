@@ -2936,7 +2936,19 @@ function startLandingAnims() {
   if (_landingAnimsStarted) return
   _landingAnimsStarted = true
 
-  // ── Anim 1: sliders moving ──
+  // ── Anim 1: shape picker cycling ──
+  const shapeOpts = document.querySelectorAll('#sa-shapes .sa-shape-opt')
+  if (shapeOpts.length) {
+    let si = 0
+    shapeOpts[si].classList.add('sa-active')
+    setInterval(() => {
+      shapeOpts[si].classList.remove('sa-active')
+      si = (si + 1) % shapeOpts.length
+      shapeOpts[si].classList.add('sa-active')
+    }, 900)
+  }
+
+  // ── Anim 2: sliders moving ──
   const handles = [
     document.getElementById('sa-h0'),
     document.getElementById('sa-h1'),
