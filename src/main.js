@@ -1928,7 +1928,7 @@ function loadScript(src) {
 }
 
 // ─────────────────────────────────────────────
-//  FONT EXPORT
+//  FONT EXPORT  (canvas-trace approach — exactly matches on-screen visuals)
 // ─────────────────────────────────────────────
 const OPENTYPE_CDN = 'https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js'
 let _fexFmt = 'otf', _fexChars = 'designed'
@@ -2011,128 +2011,177 @@ function _charGlyphName(char) {
   return `uni${cp.toString(16).toUpperCase().padStart(4,'0')}`
 }
 
-function _addGlyphShapes(path, char, bbox, scale, ASC) {
-  const { minX, minY } = bbox
-  const K = 0.5522847498
+// Render char to an offscreen canvas (white shapes on transparent), including all
+// layer effects: fusion/metaball, skew, smooth, gap, stagger, offset.
+// Returns {canvas, w, h} in CSS-pixel units, or null if empty.
+function _fontRenderChar(char, RS) {
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity
+  for (const layer of pixelState.layers) {
+    if (layer.visible === false) continue
+    const g = layer.glyphs[char]; if (!g) continue
+    const {cellW:lw=15, cellH:lh=15, rows:lr, cols:lc} = layer
+    for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
+      if (!g[r]?.[c]) continue
+      const {x,y} = layerGetCellPos(layer,c,r)
+      minX=Math.min(minX,x); minY=Math.min(minY,y)
+      maxX=Math.max(maxX,x+lw); maxY=Math.max(maxY,y+lh)
+    }
+  }
+  if (!isFinite(minX)) return null
+  const cssW = maxX-minX, cssH = maxY-minY
+  const PW = Math.ceil(cssW*RS), PH = Math.ceil(cssH*RS)
+  const cvs = document.createElement('canvas')
+  cvs.width = PW; cvs.height = PH
+  const ctx = cvs.getContext('2d')
 
   for (const layer of [...pixelState.layers].reverse()) {
     if (layer.visible === false) continue
     const g = layer.glyphs[char]; if (!g) continue
-    const { cellW:cw=15, cellH:ch=15, rows:lr, cols:lc, smooth:ls=0, shape='rect' } = layer
-    const r2 = ls / 100
+    if (!g.some(row=>row?.some(v=>v))) continue
+    const {cellW:lw=15, cellH:lh=15, rows:lr, cols:lc,
+           smooth:ls=0, skew:lsk=0, shape='rect',
+           fusion, fusionStr=50, opacity=1} = layer
+    const r2=ls/100, sk=lsk/100, str=(fusionStr??50)/100
 
-    for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
-      if (!g[r]?.[c]) continue
-      const {x,y} = layerGetCellPos(layer,c,r)
-      // Map screen coords (Y-down) → font coords (Y-up)
-      const fxL = (x - minX) * scale
-      const fxR = fxL + cw * scale
-      const fyT = ASC - (y - minY) * scale        // top = high Y in font
-      const fyB = ASC - (y - minY + ch) * scale   // bottom = low Y in font
-      const fw = cw * scale, fh = ch * scale
-      const fcx = (fxL + fxR) * 0.5, fcy = (fyT + fyB) * 0.5
-      const frx = fw * 0.5, fry = fh * 0.5
-
-      switch (shape) {
-        case 'circle':
-          // Ellipse as 4 cubic beziers, CW in Y-up (filled outer contour)
-          path.moveTo(fxR, fcy)
-          path.bezierCurveTo(fxR, fcy+fry*K, fcx+frx*K, fyT, fcx, fyT)
-          path.bezierCurveTo(fcx-frx*K, fyT, fxL, fcy+fry*K, fxL, fcy)
-          path.bezierCurveTo(fxL, fcy-fry*K, fcx-frx*K, fyB, fcx, fyB)
-          path.bezierCurveTo(fcx+frx*K, fyB, fxR, fcy-fry*K, fxR, fcy)
-          path.close()
-          break
-
-        case 'diamond':
-          path.moveTo(fcx, fyT)
-          path.lineTo(fxR, fcy)
-          path.lineTo(fcx, fyB)
-          path.lineTo(fxL, fcy)
-          path.close()
-          break
-
-        case 'cross': {
-          const ox = fw * 0.35 * (1 - r2 * 0.3)
-          const oy = fh * 0.35 * (1 - r2 * 0.3)
-          // Reverse winding vs SVG (screen CW → font CCW → reverse → font CW)
-          path.moveTo(fxL+ox, fyT-oy)
-          path.lineTo(fxL, fyT-oy)
-          path.lineTo(fxL, fyB+oy)
-          path.lineTo(fxL+ox, fyB+oy)
-          path.lineTo(fxL+ox, fyB)
-          path.lineTo(fxR-ox, fyB)
-          path.lineTo(fxR-ox, fyB+oy)
-          path.lineTo(fxR, fyB+oy)
-          path.lineTo(fxR, fyT-oy)
-          path.lineTo(fxR-ox, fyT-oy)
-          path.lineTo(fxR-ox, fyT)
-          path.lineTo(fxL+ox, fyT)
-          path.close()
-          break
-        }
-
-        case 'star4':
-        case 'star8': {
-          const nPts = shape === 'star4' ? 8 : 16
-          const ix = (shape==='star4' ? fw*(0.08+r2*0.40) : fw*(0.2+r2*0.2)) * 0.5
-          const iy = (shape==='star4' ? fh*(0.08+r2*0.40) : fh*(0.2+r2*0.2)) * 0.5
-          // Negate sin to convert Y-down → Y-up (preserves visual shape)
-          const pts = Array.from({length:nPts}, (_,i) => {
-            const a = i * Math.PI * 2 / nPts - Math.PI / 2
-            const outer = i % 2 === 0
-            return [fcx + Math.cos(a) * (outer ? frx : ix),
-                    fcy - Math.sin(a) * (outer ? fry : iy)]
-          })
-          path.moveTo(pts[0][0], pts[0][1])
-          for (let i=1;i<pts.length;i++) path.lineTo(pts[i][0], pts[i][1])
-          path.close()
-          break
-        }
-
-        case 'ring': {
-          const hs = 0.65 - r2 * 0.45
-          // Outer ellipse CW in Y-up
-          path.moveTo(fxR, fcy)
-          path.bezierCurveTo(fxR, fcy+fry*K, fcx+frx*K, fyT, fcx, fyT)
-          path.bezierCurveTo(fcx-frx*K, fyT, fxL, fcy+fry*K, fxL, fcy)
-          path.bezierCurveTo(fxL, fcy-fry*K, fcx-frx*K, fyB, fcx, fyB)
-          path.bezierCurveTo(fcx+frx*K, fyB, fxR, fcy-fry*K, fxR, fcy)
-          path.close()
-          // Inner ellipse CCW in Y-up (hole)
-          const irx = frx * hs, iry = fry * hs
-          path.moveTo(fcx+irx, fcy)
-          path.bezierCurveTo(fcx+irx, fcy-iry*K, fcx+irx*K, fcy-iry, fcx, fcy-iry)
-          path.bezierCurveTo(fcx-irx*K, fcy-iry, fcx-irx, fcy-iry*K, fcx-irx, fcy)
-          path.bezierCurveTo(fcx-irx, fcy+iry*K, fcx-irx*K, fcy+iry, fcx, fcy+iry)
-          path.bezierCurveTo(fcx+irx*K, fcy+iry, fcx+irx, fcy+iry*K, fcx+irx, fcy)
-          path.close()
-          break
-        }
-
-        default: { // rect with optional rounded corners
-          const rr = r2 * Math.min(fw, fh) * 0.5
-          if (rr < 1) {
-            path.moveTo(fxL, fyB)
-            path.lineTo(fxR, fyB)
-            path.lineTo(fxR, fyT)
-            path.lineTo(fxL, fyT)
-            path.close()
-          } else {
-            path.moveTo(fxL+rr, fyB)
-            path.lineTo(fxR-rr, fyB)
-            path.bezierCurveTo(fxR-rr+K*rr, fyB, fxR, fyB+K*rr, fxR, fyB+rr)
-            path.lineTo(fxR, fyT-rr)
-            path.bezierCurveTo(fxR, fyT-rr+K*rr, fxR-K*rr, fyT, fxR-rr, fyT)
-            path.lineTo(fxL+rr, fyT)
-            path.bezierCurveTo(fxL+rr-K*rr, fyT, fxL, fyT-K*rr, fxL, fyT-rr)
-            path.lineTo(fxL, fyB+rr)
-            path.bezierCurveTo(fxL, fyB+rr-K*rr, fxL+K*rr, fyB, fxL+rr, fyB)
-            path.close()
-          }
-        }
+    if (fusion) {
+      const blurPx = Math.max(1, str * Math.min(lw,lh) * 1.1 * RS)
+      const bp = Math.ceil(blurPx * 3)
+      const fc = document.createElement('canvas')
+      fc.width = PW+bp*2; fc.height = PH+bp*2
+      const fctx = fc.getContext('2d')
+      fctx.filter = `blur(${blurPx.toFixed(2)}px)`
+      fctx.fillStyle = '#fff'
+      for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
+        if (!g[r]?.[c]) continue
+        const {x,y} = layerGetCellPos(layer,c,r)
+        fctx.save()
+        fctx.translate((x-minX)*RS+bp, (y-minY)*RS+bp)
+        if (sk) fctx.transform(1,0,sk,1,0,0)
+        shapePath(fctx, lw*RS, lh*RS, r2, shape)
+        fctx.fill(); fctx.restore()
       }
+      fctx.filter = 'none'
+      // Threshold: keep pixels above threshold as opaque white
+      const imd = fctx.getImageData(0,0,fc.width,fc.height)
+      const d = imd.data
+      const thr = Math.round((0.55 - str*0.25) * 255)
+      for (let i=0;i<d.length;i+=4) {
+        const a=d[i+3]
+        d[i]=d[i+1]=d[i+2]=255
+        d[i+3] = a>thr ? 255 : 0
+      }
+      fctx.putImageData(imd,0,0)
+      ctx.save(); ctx.globalAlpha=opacity
+      ctx.drawImage(fc, bp, bp, PW, PH, 0, 0, PW, PH)
+      ctx.restore()
+    } else {
+      ctx.save(); ctx.globalAlpha=opacity; ctx.fillStyle='#fff'
+      for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
+        if (!g[r]?.[c]) continue
+        const {x,y} = layerGetCellPos(layer,c,r)
+        ctx.save()
+        ctx.translate((x-minX)*RS, (y-minY)*RS)
+        if (sk) ctx.transform(1,0,sk,1,0,0)
+        shapePath(ctx, lw*RS, lh*RS, r2, shape)
+        ctx.fill(); ctx.restore()
+      }
+      ctx.restore()
     }
+  }
+  return { canvas: cvs, cssW, cssH, RS }
+}
+
+// Marching squares: extract closed contour segments from an alpha-channel binary grid.
+// Returns segments as [[p1,p2], ...] where p=(gx,gy) in grid space.
+function _marchSquares(d, PW, PH, stride, thresh) {
+  const GW = Math.ceil(PW/stride)+1, GH = Math.ceil(PH/stride)+1
+  const at = (gx,gy) => {
+    const px=Math.min(gx*stride,PW-1), py=Math.min(gy*stride,PH-1)
+    return d[(py*PW+px)*4+3] > thresh ? 1 : 0
+  }
+  const segs = []
+  for (let gy=0;gy<GH-1;gy++) for (let gx=0;gx<GW-1;gx++) {
+    const tl=at(gx,gy),tr=at(gx+1,gy),bl=at(gx,gy+1),br=at(gx+1,gy+1)
+    const idx=(tl<<3)|(tr<<2)|(br<<1)|bl
+    if (!idx||idx===15) continue
+    const T=[gx+.5,gy],R=[gx+1,gy+.5],B=[gx+.5,gy+1],L=[gx,gy+.5]
+    switch(idx) {
+      case 1:  segs.push([L,B]); break
+      case 2:  segs.push([B,R]); break
+      case 3:  segs.push([L,R]); break
+      case 4:  segs.push([T,R]); break
+      case 5:  segs.push([T,R],[L,B]); break   // saddle TR+BL
+      case 6:  segs.push([T,B]); break
+      case 7:  segs.push([T,L]); break
+      case 8:  segs.push([L,T]); break
+      case 9:  segs.push([B,T]); break
+      case 10: segs.push([L,T],[B,R]); break   // saddle TL+BR
+      case 11: segs.push([T,R]); break
+      case 12: segs.push([L,R]); break
+      case 13: segs.push([R,B]); break
+      case 14: segs.push([L,B]); break
+    }
+  }
+  return segs
+}
+
+// Stitch unordered segments into closed contours.
+// Returns array of point arrays (each contour is a closed polyline).
+function _stitchContours(segs) {
+  if (!segs.length) return []
+  const enc = ([x,y]) => Math.round(x*8)*100000 + Math.round(y*8)
+  const adj = new Map()
+  const addEnd = (k,i,rev) => { const a=adj.get(k)||[]; a.push({i,rev}); adj.set(k,a) }
+  for (let i=0;i<segs.length;i++) {
+    addEnd(enc(segs[i][0]),i,false)
+    addEnd(enc(segs[i][1]),i,true)
+  }
+  const used = new Uint8Array(segs.length)
+  const out = []
+  for (let si=0;si<segs.length;si++) {
+    if (used[si]) continue
+    used[si]=1
+    const contour=[segs[si][0],segs[si][1]]
+    const startK=enc(segs[si][0])
+    let curK=enc(segs[si][1])
+    let lim=segs.length+5
+    while(lim-->0 && curK!==startK) {
+      const nbrs=adj.get(curK)||[]
+      let ok=false
+      for (const {i,rev} of nbrs) {
+        if (used[i]) continue
+        used[i]=1
+        const np=rev?segs[i][0]:segs[i][1]
+        contour.push(np); curK=enc(np); ok=true; break
+      }
+      if (!ok) break
+    }
+    if (contour.length>=3) out.push(contour)
+  }
+  return out
+}
+
+// Trace the rendered canvas and add contour polylines to an opentype Path.
+// fontScale: CSS pixels → font units; ASC: ascender in font units.
+function _addCanvasContours(path, renderResult, fontScale, ASC) {
+  const {canvas, cssW, cssH, RS} = renderResult
+  const PW=canvas.width, PH=canvas.height
+  const imd = canvas.getContext('2d').getImageData(0,0,PW,PH)
+  // Stride: balance resolution vs. performance. At RS≥4, stride=2 gives adequate detail.
+  const stride = Math.max(1, Math.round(RS/3))
+  const segs = _marchSquares(imd.data, PW, PH, stride, 128)
+  const contours = _stitchContours(segs)
+  for (const pts of contours) {
+    if (pts.length<3) continue
+    // Convert grid coords (gx,gy) → font coords (Y-up)
+    const toFont = ([gx,gy]) => [
+      (gx*stride/RS) * fontScale,
+      ASC - (gy*stride/RS) * fontScale
+    ]
+    const [x0,y0]=toFont(pts[0])
+    path.moveTo(x0,y0)
+    for (let i=1;i<pts.length;i++) { const [x,y]=toFont(pts[i]); path.lineTo(x,y) }
+    path.close()
   }
 }
 
@@ -2152,42 +2201,42 @@ async function doFontExport() {
   const rawName = (document.getElementById('font-export-name').value.trim() || getCurrentDocName())
   const fontName = rawName.replace(/[^\w\s\-]/g, '').trim() || 'MyFont'
 
-  // Compute bounding boxes & global scale
+  // Render all designed chars to canvas first, determine global cap-height
+  const RS = 6  // render scale (px per CSS px) — enough for clean marching-squares traces
+  const renders = {}
   let globalH = 0
-  const bboxes = {}
   for (const char of chars) {
-    const bb = _pixelCharBBox(char)
-    if (bb) { bboxes[char] = bb; globalH = Math.max(globalH, bb.h) }
+    const r = _fontRenderChar(char, RS)
+    if (r) { renders[char] = r; globalH = Math.max(globalH, r.cssH) }
   }
 
   const UPM = 1000, ASC = 800, DESC = -200
-  const scale = globalH > 0 ? ASC / globalH : 1
+  const fontScale = globalH > 0 ? ASC / globalH : 1
 
-  // Compute advance widths; find default from designed chars
+  // Advance widths
   const advMap = {}
   let totalAdv = 0, nDesigned = 0
   for (const char of chars) {
-    const bb = bboxes[char]
-    if (bb) {
-      advMap[char] = Math.round(bb.w * scale + 50)
+    const r = renders[char]
+    if (r) {
+      advMap[char] = Math.round(r.cssW * fontScale + 50)
       totalAdv += advMap[char]; nDesigned++
     }
   }
   const defaultAdv = nDesigned > 0 ? Math.round(totalAdv / nDesigned) : 500
 
-  // .notdef: simple box outline
-  const ndAdv = defaultAdv
+  // .notdef: hollow rectangle
+  const ndAdv = defaultAdv, nm = 60, nk = 5
   const ndPath = new opentype.Path()
-  const nm = 60, nk = 5
-  ndPath.moveTo(nm, nm); ndPath.lineTo(nm, ASC-nm); ndPath.lineTo(ndAdv-nm, ASC-nm); ndPath.lineTo(ndAdv-nm, nm); ndPath.close()
-  ndPath.moveTo(nm+nk, nm+nk); ndPath.lineTo(ndAdv-nm-nk, nm+nk); ndPath.lineTo(ndAdv-nm-nk, ASC-nm-nk); ndPath.lineTo(nm+nk, ASC-nm-nk); ndPath.close()
+  ndPath.moveTo(nm,nm); ndPath.lineTo(nm,ASC-nm); ndPath.lineTo(ndAdv-nm,ASC-nm); ndPath.lineTo(ndAdv-nm,nm); ndPath.close()
+  ndPath.moveTo(nm+nk,nm+nk); ndPath.lineTo(ndAdv-nm-nk,nm+nk); ndPath.lineTo(ndAdv-nm-nk,ASC-nm-nk); ndPath.lineTo(nm+nk,ASC-nm-nk); ndPath.close()
 
-  const glyphs = [new opentype.Glyph({ name:'.notdef', unicode:0, advanceWidth:ndAdv, path:ndPath })]
+  const glyphs = [new opentype.Glyph({name:'.notdef',unicode:0,advanceWidth:ndAdv,path:ndPath})]
 
   for (const char of chars) {
-    const bb = bboxes[char]
     const path = new opentype.Path()
-    if (bb) _addGlyphShapes(path, char, bb, scale, ASC)
+    const r = renders[char]
+    if (r) _addCanvasContours(path, r, fontScale, ASC)
     glyphs.push(new opentype.Glyph({
       name: _charGlyphName(char),
       unicode: char.codePointAt(0),
@@ -2870,6 +2919,25 @@ function openDocManagerPatched() {
   patchedRenderDocList()
 }
 
+// ── Landing page ──
+function hideLanding() {
+  const el = document.getElementById('landing')
+  if (el) { el.classList.remove('visible'); el.classList.add('hidden') }
+}
+function showLanding() {
+  const el = document.getElementById('landing')
+  if (el) { el.classList.remove('hidden'); el.classList.add('visible') }
+}
+
+// ── Help drawer ──
+let _helpOpen = false
+function toggleHelp() {
+  _helpOpen = !_helpOpen
+  document.getElementById('help-drawer')?.classList.toggle('open', _helpOpen)
+  document.getElementById('help-backdrop')?.classList.toggle('open', _helpOpen)
+  document.getElementById('help-btn')?.classList.toggle('active', _helpOpen)
+}
+
 // ── Init Supabase auth listener ──
 let _authReady = false
 function initAuth() {
@@ -2878,11 +2946,14 @@ function initAuth() {
     updateAuthUI()
     _authReady = true
     if (currentUser) {
+      hideLanding()  // already logged in — skip landing entirely
       const hasTossReturn = new URLSearchParams(window.location.search).get('paymentKey')
       fetchProfile(currentUser.id).then(p => { currentProfile = p; updateAuthUI() })
       if (hasTossReturn) {
         handleTossReturn()
       }
+    } else {
+      showLanding()  // not logged in — fade in landing page
     }
   })
   supabase.auth.onAuthStateChange((_event, session) => {
@@ -2890,12 +2961,17 @@ function initAuth() {
     currentUser = session?.user || null
     updateAuthUI()
     if (currentUser) {
+      const landingVisible = document.getElementById('landing')?.classList.contains('visible')
+      if (!landingVisible) {
+        hideLanding()  // already inside editor — no landing to hide
+      }
+      // If landing is visible: stay on landing; user clicks "Start designing" to enter
       fetchProfile(currentUser.id).then(p => {
         currentProfile = p
         updateAuthUI()
         setStatus('Signed in as ' + (p?.username || currentUser.email))
       })
-      if (_authReady && wasLoggedOut) {
+      if (_authReady && wasLoggedOut && !landingVisible) {
         setTimeout(() => openDocManagerPatched(), 400)
       }
     } else {
@@ -3066,6 +3142,7 @@ Object.assign(window, {
   docsRename, docsRenameCloud, saveNewDoc: saveNewDocPatched,
   createNewDoc, saveCurrentDoc,
   openNewFileModal, closeNewFileModal, setNewFileMode, confirmNewFile,
+  hideLanding, showLanding, toggleHelp,
   openAuthModal, closeAuthModal, switchAuthTab, handleAuthSubmit, signIn, signUp, signOut, toggleUserDropdown,
   openSubscriptionModal, closeSubscriptionModal, selectPlanTab, startTossPayment, renewSubscription,
   addPixelLayer, duplicatePixelLayer, removePixelLayer, setActiveLayer, setLayerOpacity, setLayerName,

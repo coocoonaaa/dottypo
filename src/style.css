@@ -586,7 +586,7 @@ body.pixel-mode .pixel-panel { display: block; }
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.45);
   backdrop-filter: blur(4px);
-  z-index: 1000;
+  z-index: 3000;
   align-items: center; justify-content: center;
 }
 .doc-manager-overlay.open { display: flex; }
@@ -743,7 +743,7 @@ body.pixel-mode .pixel-panel { display: block; }
 /* ── AUTH MODAL ── */
 .modal-overlay {
   display: none; position: fixed; inset: 0;
-  background: rgba(0,0,0,0.45); z-index: 1000;
+  background: rgba(0,0,0,0.45); z-index: 3000;
   align-items: center; justify-content: center;
 }
 .modal-overlay.open { display: flex; }
@@ -1139,6 +1139,180 @@ body.pixel-mode .pixel-panel { display: block; }
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(212,240,74,0.07);
+}
+
+/* ── LANDING PAGE ── */
+/* ── LANDING PAGE ── */
+.landing {
+  position: fixed; inset: 0; z-index: 2000;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  /* Start invisible — JS shows it only when user is NOT logged in */
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.4s ease, visibility 0.4s;
+}
+.landing.visible { opacity: 1; visibility: visible; pointer-events: auto; }
+.landing.hidden  { opacity: 0; visibility: hidden;  pointer-events: none; }
+
+/* dot-grid texture — adapts to theme */
+.landing::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image: radial-gradient(circle, rgba(0,0,0,0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+}
+body.dark .landing::before {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.055) 1px, transparent 1px);
+}
+
+.landing-stage {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 32px; position: relative; z-index: 1;
+  padding: 40px 24px;
+}
+
+.landing-logo {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 80px; font-weight: 700;
+  letter-spacing: -0.03em; line-height: 1;
+  user-select: none;
+}
+.landing-logo .logo-dot  { color: var(--accent); }
+.landing-logo .logo-typo { color: var(--text); }
+
+.landing-tagline {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; letter-spacing: 0.2em;
+  color: var(--text3); text-transform: uppercase;
+  margin-top: -16px;
+}
+
+/* ── 3-step cards ── */
+.landing-steps {
+  display: flex; align-items: stretch; gap: 0;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+  width: min(720px, 90vw);
+}
+.landing-step {
+  flex: 1; padding: 20px 22px 22px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.landing-step-divider {
+  width: 1px; background: var(--border); flex-shrink: 0;
+}
+.step-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; letter-spacing: 0.14em;
+  color: var(--accent); font-weight: 500;
+}
+.step-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  line-height: 1.3;
+}
+.step-desc {
+  font-size: 11.5px; color: var(--text2); line-height: 1.5;
+}
+
+/* ── CTA row ── */
+.landing-cta {
+  display: flex; align-items: center; gap: 16px;
+}
+.landing-cta-auth {
+  display: flex; align-items: center; gap: 8px;
+}
+
+.landing-enter {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 0 24px; height: 40px;
+  border-radius: 100px;
+  border: 1px solid var(--border2);
+  background: transparent; color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s;
+}
+.landing-enter:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+body.dark .landing-enter:hover { color: #0f0f0d; }
+.landing-enter:hover svg { transform: translateX(3px); }
+.landing-enter svg { transition: transform 0.15s; }
+
+/* ── HELP DRAWER ── */
+.help-btn {
+  font-size: 13px; font-weight: 600;
+  color: var(--text2);
+}
+.help-btn.active { color: var(--accent); }
+
+.help-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 1998;
+}
+.help-backdrop.open { display: block; }
+
+.help-drawer {
+  position: fixed; top: 0; right: -340px; bottom: 0;
+  width: 320px; z-index: 1999;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: right 0.22s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: -4px 0 24px rgba(0,0,0,0.1);
+}
+.help-drawer.open { right: 0; }
+
+.help-drawer-header {
+  height: var(--header-h); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.help-drawer-title {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  letter-spacing: 0.01em;
+}
+.help-drawer-close {
+  width: 24px; height: 24px; border-radius: 4px;
+  border: none; background: none; cursor: pointer;
+  color: var(--text3); font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, color 0.1s;
+}
+.help-drawer-close:hover { background: var(--bg3); color: var(--text); }
+
+.help-drawer-body {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+.help-section { display: flex; flex-direction: column; gap: 6px; }
+.help-section-title {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text3);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+.help-row {
+  display: flex; align-items: baseline;
+  justify-content: space-between; gap: 8px;
+  padding: 3px 0;
+}
+.help-label {
+  font-size: 11.5px; color: var(--text2);
+  white-space: nowrap; flex-shrink: 0;
+}
+.help-val {
+  font-size: 11.5px; color: var(--text3);
+  text-align: right; line-height: 1.4;
+}
+kbd {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px; color: var(--text2);
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 4px; padding: 1px 6px;
+  white-space: nowrap; flex-shrink: 0;
 }
 
 /* ── FONT EXPORT MODAL ── */

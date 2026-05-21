@@ -9,7 +9,7 @@
 <body>
 
 <header>
-  <div class="logo"><span class="logo-dot">dot</span><span class="logo-typo">typo</span></div>
+  <div class="logo" onclick="showLanding()" style="cursor:pointer" title="Back to home"><span class="logo-dot">dot</span><span class="logo-typo">typo</span></div>
   <div style="width:1px;height:18px;background:var(--border);"></div>
   <div class="mode-toggle">
     <button class="mode-btn active" id="btn-mode-grid" onclick="switchMode('grid')">Grid</button>
@@ -372,6 +372,7 @@
         <button id="btn-redo" class="zoom-btn" onclick="redo()" title="Redo (Ctrl Y)" style="font-size:14px;opacity:0.35;">↪</button>
         <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
         <button class="zoom-btn theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Day / Night"></button>
+        <button class="zoom-btn help-btn" id="help-btn" onclick="toggleHelp()" title="Help & Shortcuts">?</button>
       </div>
     </div>
   </div>
@@ -543,6 +544,96 @@
     <div id="doc-list" class="doc-list"></div>
   </div>
 </div>
+
+<!-- ── LANDING PAGE ── -->
+<div id="landing" class="landing">
+  <div class="landing-stage">
+    <div class="landing-logo">
+      <span class="logo-dot">dot</span><span class="logo-typo">typo</span>
+    </div>
+    <div class="landing-tagline">Design pixel fonts in your browser</div>
+
+    <!-- 3-step cards -->
+    <div class="landing-steps">
+      <div class="landing-step">
+        <div class="step-num">01</div>
+        <div class="step-title">Pick a character</div>
+        <div class="step-desc">Choose any glyph from the character panel on the right</div>
+      </div>
+      <div class="landing-step-divider"></div>
+      <div class="landing-step">
+        <div class="step-num">02</div>
+        <div class="step-title">Draw pixels</div>
+        <div class="step-desc">Click cells to fill, use sliders to apply effects like Fusion or Skew</div>
+      </div>
+      <div class="landing-step-divider"></div>
+      <div class="landing-step">
+        <div class="step-num">03</div>
+        <div class="step-title">Export your font</div>
+        <div class="step-desc">Download as SVG, PNG, or a full OTF / TTF font file</div>
+      </div>
+    </div>
+
+    <div class="landing-cta">
+      <button class="landing-enter" onclick="hideLanding()">
+        Start designing
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <path d="M2 6.5h9M8 3l3.5 3.5L8 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="landing-cta-auth">
+        <button class="btn" onclick="openAuthModal();switchAuthTab('register')">Sign up</button>
+        <button class="btn primary" onclick="openAuthModal();switchAuthTab('login')">Log in</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── HELP DRAWER ── -->
+<div id="help-drawer" class="help-drawer">
+  <div class="help-drawer-header">
+    <span class="help-drawer-title">Help &amp; Shortcuts</span>
+    <button class="help-drawer-close" onclick="toggleHelp()">✕</button>
+  </div>
+  <div class="help-drawer-body">
+
+    <div class="help-section">
+      <div class="help-section-title">Getting Started</div>
+      <div class="help-row"><span class="help-label">Pick a character</span><span class="help-val">Click any glyph in the right panel</span></div>
+      <div class="help-row"><span class="help-label">Draw / Erase</span><span class="help-val">Left-click to fill, right-click to erase</span></div>
+      <div class="help-row"><span class="help-label">Grid mode</span><span class="help-val">Vector shapes with adjustable grid</span></div>
+      <div class="help-row"><span class="help-label">Pixel mode</span><span class="help-val">Bitmap pixels with effect sliders</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Effects (Pixel mode)</div>
+      <div class="help-row"><span class="help-label">Fusion</span><span class="help-val">Merges nearby pixels into smooth blobs</span></div>
+      <div class="help-row"><span class="help-label">Skew</span><span class="help-val">Slants the glyph horizontally</span></div>
+      <div class="help-row"><span class="help-label">Gap</span><span class="help-val">Space between pixel cells</span></div>
+      <div class="help-row"><span class="help-label">Stagger</span><span class="help-val">Offsets alternating rows</span></div>
+      <div class="help-row"><span class="help-label">Smooth</span><span class="help-val">Rounds pixel corners</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Keyboard Shortcuts</div>
+      <div class="help-row"><kbd>Ctrl Z</kbd><span class="help-val">Undo</span></div>
+      <div class="help-row"><kbd>Ctrl Y</kbd><span class="help-val">Redo</span></div>
+      <div class="help-row"><kbd>Ctrl S</kbd><span class="help-val">Save current file</span></div>
+      <div class="help-row"><kbd>← →</kbd><span class="help-val">Previous / Next character</span></div>
+      <div class="help-row"><kbd>+ −</kbd><span class="help-val">Zoom in / out</span></div>
+      <div class="help-row"><kbd>0</kbd><span class="help-val">Reset zoom</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">Export</div>
+      <div class="help-row"><span class="help-label">SVG</span><span class="help-val">Vector file of current glyph</span></div>
+      <div class="help-row"><span class="help-label">PNG</span><span class="help-val">Raster image of current glyph</span></div>
+      <div class="help-row"><span class="help-label">Font ↓</span><span class="help-val">Full OTF / TTF font for all designed glyphs</span></div>
+    </div>
+
+  </div>
+</div>
+<div id="help-backdrop" class="help-backdrop" onclick="toggleHelp()"></div>
 
 <script type="module" src="/src/main.js"></script>
 </body>
