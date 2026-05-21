@@ -2927,6 +2927,75 @@ function hideLanding() {
 function showLanding() {
   const el = document.getElementById('landing')
   if (el) { el.classList.remove('hidden'); el.classList.add('visible') }
+  setTimeout(startLandingAnims, 300)
+}
+
+// ── Landing step animations ──
+let _landingAnimsStarted = false
+function startLandingAnims() {
+  if (_landingAnimsStarted) return
+  _landingAnimsStarted = true
+
+  // ── Anim 1: character grid cycling selection ──
+  const chars = document.querySelectorAll('#sa-pick .sa-char')
+  if (chars.length) {
+    let idx = 4
+    chars[idx].classList.add('sa-active')
+    setInterval(() => {
+      chars[idx].classList.remove('sa-active')
+      // pick next non-adjacent random-ish cell
+      idx = (idx + 2 + Math.floor(Math.random() * 3)) % chars.length
+      chars[idx].classList.add('sa-active')
+    }, 750)
+  }
+
+  // ── Anim 2: pixel grid draws letter 'd' ──
+  // 5×5 grid, indices 0-24 row-major
+  // d:  .####   row0: 1,2,3
+  //     #...#   row1: 0,4
+  //     #...#   row2: 0,4 (← wait, 'd' reversed)
+  // Let's draw a simple "o" shape
+  const O_SHAPE = [1,2,3, 5,9, 10,14, 15,19, 21,22,23]
+  const pixels = document.querySelectorAll('#sa-draw .sa-pix')
+  if (pixels.length) {
+    let step = 0
+    function drawTick() {
+      if (step < O_SHAPE.length) {
+        pixels[O_SHAPE[step]].classList.add('sa-lit')
+        step++
+        setTimeout(drawTick, 90)
+      } else {
+        setTimeout(() => {
+          pixels.forEach(p => p.classList.remove('sa-lit'))
+          step = 0
+          setTimeout(drawTick, 500)
+        }, 1400)
+      }
+    }
+    setTimeout(drawTick, 600)
+  }
+
+  // ── Anim 3: export format cycling with progress bar ──
+  const fmts = document.querySelectorAll('#sa-export .sa-fmt')
+  const bar = document.getElementById('sa-bar')
+  if (fmts.length && bar) {
+    let fi = 0
+    function runFmt() {
+      fmts.forEach(f => f.classList.remove('sa-active'))
+      fmts[fi].classList.add('sa-active')
+      bar.style.transition = 'none'
+      bar.style.width = '0%'
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        bar.style.transition = 'width 1.1s cubic-bezier(0.4,0,0.6,1)'
+        bar.style.width = '100%'
+      }))
+      setTimeout(() => {
+        fi = (fi + 1) % fmts.length
+        setTimeout(runFmt, 200)
+      }, 1400)
+    }
+    setTimeout(runFmt, 900)
+  }
 }
 
 // ── Help drawer ──

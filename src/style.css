@@ -1216,6 +1216,94 @@ body.dark .landing::before {
   font-size: 11.5px; color: var(--text2); line-height: 1.5;
 }
 
+/* ── step animations ── */
+.step-anim {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  min-height: 72px;
+}
+
+/* card 1 — character grid */
+.sa-chargrid {
+  display: grid;
+  grid-template-columns: repeat(3, 26px);
+  gap: 4px;
+}
+.sa-char {
+  width: 26px; height: 26px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; font-weight: 500;
+  color: var(--text3);
+  transition: background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s;
+  cursor: default; user-select: none;
+}
+.sa-char.sa-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  transform: scale(1.12);
+}
+body.dark .sa-char.sa-active { color: #0f0f0d; }
+
+/* card 2 — pixel draw grid */
+.sa-pixgrid {
+  display: grid;
+  grid-template-columns: repeat(5, 11px);
+  gap: 3px;
+}
+.sa-pix {
+  width: 11px; height: 11px;
+  border-radius: 2px;
+  background: var(--bg3);
+  transition: background 0.08s, transform 0.08s;
+}
+.sa-pix.sa-lit {
+  background: var(--accent);
+  transform: scale(1.05);
+}
+
+/* card 3 — export formats */
+.sa-export {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 10px;
+  width: 100%;
+}
+.sa-fmts {
+  display: flex; gap: 6px;
+}
+.sa-fmt {
+  height: 24px; padding: 0 10px;
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; font-weight: 500;
+  color: var(--text3);
+  display: flex; align-items: center;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+  user-select: none;
+}
+.sa-fmt.sa-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sa-progress {
+  width: 80%; height: 2px;
+  background: var(--bg3);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.sa-bar {
+  height: 100%;
+  background: var(--accent);
+  width: 0%;
+  border-radius: 1px;
+}
+
 /* ── CTA row ── */
 .landing-cta {
   display: flex; align-items: center; gap: 16px;
