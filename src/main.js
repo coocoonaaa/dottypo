@@ -45,7 +45,7 @@ const CHARSET = [...CHARSET_LATIN, ...CHARSET_KOREAN]
 // ─────────────────────────────────────────────
 //  MODE & SHARED NAV
 // ─────────────────────────────────────────────
-let currentMode = 'grid'
+let currentMode = 'pixel'
 let currentCharIdx = 0
 let gridDocName = 'Untitled'
 let pixelDocName = 'Untitled'
