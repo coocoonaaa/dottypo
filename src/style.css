@@ -1225,30 +1225,33 @@ body.dark .landing::before {
   min-height: 72px;
 }
 
-/* card 1 — character grid */
-.sa-chargrid {
-  display: grid;
-  grid-template-columns: repeat(3, 26px);
-  gap: 4px;
+/* card 1 — sliders */
+.sa-sliders {
+  display: flex; flex-direction: column; gap: 8px;
+  width: 100%;
 }
-.sa-char {
-  width: 26px; height: 26px;
-  border: 1px solid var(--border2);
-  border-radius: 4px;
-  display: flex; align-items: center; justify-content: center;
+.sa-slider-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.sa-slider-label {
   font-family: 'DM Mono', monospace;
-  font-size: 10px; font-weight: 500;
-  color: var(--text3);
-  transition: background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s;
-  cursor: default; user-select: none;
+  font-size: 9px; color: var(--text3);
+  width: 36px; flex-shrink: 0; letter-spacing: 0.04em;
 }
-.sa-char.sa-active {
+.sa-track {
+  flex: 1; height: 3px;
+  background: var(--bg3); border-radius: 2px;
+  position: relative;
+}
+.sa-handle {
+  position: absolute; top: 50%;
+  width: 10px; height: 10px;
+  border-radius: 50%;
   background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  transform: scale(1.12);
+  transform: translate(-50%, -50%);
+  left: 30%;
+  transition: left 0.7s cubic-bezier(0.4, 0, 0.2, 1);
 }
-body.dark .sa-char.sa-active { color: #0f0f0d; }
 
 /* card 2 — pixel draw grid */
 .sa-pixgrid {

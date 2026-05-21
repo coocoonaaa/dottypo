@@ -2936,17 +2936,26 @@ function startLandingAnims() {
   if (_landingAnimsStarted) return
   _landingAnimsStarted = true
 
-  // ── Anim 1: character grid cycling selection ──
-  const chars = document.querySelectorAll('#sa-pick .sa-char')
-  if (chars.length) {
-    let idx = 4
-    chars[idx].classList.add('sa-active')
-    setInterval(() => {
-      chars[idx].classList.remove('sa-active')
-      // pick next non-adjacent random-ish cell
-      idx = (idx + 2 + Math.floor(Math.random() * 3)) % chars.length
-      chars[idx].classList.add('sa-active')
-    }, 750)
+  // ── Anim 1: sliders moving ──
+  const handles = [
+    document.getElementById('sa-h0'),
+    document.getElementById('sa-h1'),
+    document.getElementById('sa-h2'),
+  ]
+  // preset positions (% left) for each slider across 3 keyframes
+  const presets = [
+    [20, 65, 40],
+    [55, 25, 72],
+    [38, 80, 18],
+  ]
+  if (handles.every(Boolean)) {
+    let kf = 0
+    function stepSliders() {
+      handles.forEach((h, i) => { h.style.left = presets[kf][i] + '%' })
+      kf = (kf + 1) % presets.length
+    }
+    stepSliders()
+    setInterval(stepSliders, 1100)
   }
 
   // ── Anim 2: pixel grid draws letter 'd' ──

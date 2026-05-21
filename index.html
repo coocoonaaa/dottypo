@@ -557,22 +557,31 @@
     <div class="landing-steps">
       <div class="landing-step">
         <div class="step-num">01</div>
-        <div class="step-title">Pick a character</div>
-        <div class="step-desc">Choose any glyph from the character panel on the right</div>
-        <!-- anim: character grid with cycling selection -->
+        <div class="step-title">Customise your grid</div>
+        <div class="step-desc">Set pixel size, shape, and dial in effects like Fusion, Skew, and Gap</div>
+        <!-- anim: sliders moving -->
         <div class="step-anim">
-          <div class="sa-chargrid" id="sa-pick">
-            <div class="sa-char">A</div><div class="sa-char">B</div><div class="sa-char">C</div>
-            <div class="sa-char">D</div><div class="sa-char">E</div><div class="sa-char">F</div>
-            <div class="sa-char">G</div><div class="sa-char">H</div><div class="sa-char">I</div>
+          <div class="sa-sliders" id="sa-sliders">
+            <div class="sa-slider-row">
+              <span class="sa-slider-label">Fusion</span>
+              <div class="sa-track"><div class="sa-handle" id="sa-h0"></div></div>
+            </div>
+            <div class="sa-slider-row">
+              <span class="sa-slider-label">Skew</span>
+              <div class="sa-track"><div class="sa-handle" id="sa-h1"></div></div>
+            </div>
+            <div class="sa-slider-row">
+              <span class="sa-slider-label">Gap</span>
+              <div class="sa-track"><div class="sa-handle" id="sa-h2"></div></div>
+            </div>
           </div>
         </div>
       </div>
       <div class="landing-step-divider"></div>
       <div class="landing-step">
         <div class="step-num">02</div>
-        <div class="step-title">Draw pixels</div>
-        <div class="step-desc">Click cells to fill, use sliders to apply effects like Fusion or Skew</div>
+        <div class="step-title">Draw each glyph</div>
+        <div class="step-desc">Click cells to fill pixels, repeat for every character in your set</div>
         <!-- anim: pixel grid drawing a letter -->
         <div class="step-anim">
           <div class="sa-pixgrid" id="sa-draw">
