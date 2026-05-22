@@ -3086,7 +3086,8 @@ function init() {
   document.getElementById('theme-toggle').innerHTML = SVG_MOON
   initAuth()
   setTimeout(() => {
-    resizeCanvas(); renderMainCanvas(null); resetZoom()
+    switchMode(currentMode)   // 初始化默认模式（pixel-mode class、sliders、layer list 等）
+    resetZoom()
     renderAllThumbnails(); renderPreview()
     setStatus('Log in to save your work')
   }, 50)

@@ -161,7 +161,6 @@ header {
   color: var(--text3);
   margin: 14px 0 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
 }
 .param-group-title:first-child { margin-top: 0; }
 .slider-val, .slider-input {
