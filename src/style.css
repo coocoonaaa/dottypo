@@ -1172,8 +1172,8 @@ body.pixel-mode .pixel-panel { display: block; }
   position: fixed; inset: 0; z-index: 2000;
   background: var(--bg);
   display: flex; flex-direction: column;
-  /* Start invisible — JS shows it only when user is NOT logged in */
-  opacity: 0; visibility: hidden; pointer-events: none;
+  /* 默认可见，JS 在需要时隐藏 */
+  opacity: 1; visibility: visible; pointer-events: auto;
   transition: opacity 0.4s ease, visibility 0.4s;
 }
 .landing.visible { opacity: 1; visibility: visible; pointer-events: auto; }
