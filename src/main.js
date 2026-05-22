@@ -2996,7 +2996,23 @@ function startLandingAnims() {
     setTimeout(drawTick, 600)
   }
 
-  // ── Anim 3: export format cycling with progress bar ──
+  // ── Anim 3: live preview text cycling ──
+  const previewText = document.getElementById('sa-preview-text')
+  if (previewText) {
+    const samples = ['Aa', 'Bb Cc', 'Hello', '01 02', 'Zz']
+    let pi = 0
+    function cyclePrev() {
+      previewText.style.opacity = '0'
+      setTimeout(() => {
+        pi = (pi + 1) % samples.length
+        previewText.textContent = samples[pi]
+        previewText.style.opacity = '1'
+      }, 300)
+    }
+    setInterval(cyclePrev, 1800)
+  }
+
+  // ── Anim 4: export format cycling with progress bar ──
   const fmts = document.querySelectorAll('#sa-export .sa-fmt')
   const bar = document.getElementById('sa-bar')
   if (fmts.length && bar) {

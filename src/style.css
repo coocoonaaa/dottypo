@@ -1219,7 +1219,7 @@ body.dark .landing::before {
   display: flex; align-items: stretch; gap: 0;
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: 12px; overflow: hidden;
-  width: min(920px, 92vw);
+  width: min(1100px, 94vw);
 }
 .landing-step {
   flex: 1; padding: 20px 22px 22px;
@@ -1323,7 +1323,44 @@ body.dark .landing::before {
   transform: scale(1.05);
 }
 
-/* card 3 — export formats */
+/* card 4 — live preview */
+.sa-preview {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 8px; width: 100%;
+}
+.sa-preview-screen {
+  display: flex; align-items: center; justify-content: center;
+  gap: 2px;
+  width: 100%; height: 36px;
+  background: var(--bg3);
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  overflow: hidden;
+}
+.sa-preview-text {
+  font-family: 'DM Mono', monospace;
+  font-size: 15px; font-weight: 500;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  transition: opacity 0.3s;
+}
+.sa-preview-cursor {
+  width: 1.5px; height: 16px;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: sa-blink 1s step-end infinite;
+}
+@keyframes sa-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.sa-preview-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; letter-spacing: 0.1em;
+  color: var(--text3); text-transform: uppercase;
+}
+
+/* card 5 — export formats */
 .sa-export {
   display: flex; flex-direction: column;
   align-items: center; gap: 10px;
