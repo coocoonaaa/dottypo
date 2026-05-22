@@ -3051,15 +3051,16 @@ function initAuth() {
     currentUser = session?.user || null
     updateAuthUI()
     _authReady = true
+    // 无论是否登录，始终先显示 landing，用户点击 Start designing 才进入
+    showLanding()
     if (currentUser) {
-      hideLanding()  // already logged in — skip landing entirely
       const hasTossReturn = new URLSearchParams(window.location.search).get('paymentKey')
       fetchProfile(currentUser.id).then(p => { currentProfile = p; updateAuthUI() })
       if (hasTossReturn) {
+        // 支付回调页面直接跳过 landing
+        hideLanding()
         handleTossReturn()
       }
-    } else {
-      showLanding()  // not logged in — fade in landing page
     }
   })
   supabase.auth.onAuthStateChange((_event, session) => {
