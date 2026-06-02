@@ -105,7 +105,6 @@ function makePixelLayer(name = 'Layer 1', shape = 'rect', color = '#000000', par
     smooth: params.smooth ?? 0, skew: params.skew ?? 0,
     rowStagger: params.rowStagger ?? 0, colStagger: params.colStagger ?? 0,
     offsetX: params.offsetX ?? 0, offsetY: params.offsetY ?? 0,
-    fusion: params.fusion ?? false, fusionStr: params.fusionStr ?? 50,
     glyphs: {}
   }
   CHARSET.forEach(c => { layer.glyphs[c] = null })
@@ -509,6 +508,16 @@ function shapePath(ctx2, w, h, r2, type2) {
       ctx2.ellipse(w/2, h/2, w/2*hs, h/2*hs, 0, 0, Math.PI*2, true)
       break
     }
+    case 'heart': {
+      const hx = w/2, top = h*0.28
+      ctx2.moveTo(hx, top)
+      ctx2.bezierCurveTo(hx, h*0.06,  w,    h*0.06,  w,    h*0.36)
+      ctx2.bezierCurveTo(w,    h*0.64, hx,   h*0.82,  hx,   h)
+      ctx2.bezierCurveTo(hx,   h*0.82, 0,    h*0.64,  0,    h*0.36)
+      ctx2.bezierCurveTo(0,    h*0.06, hx,   h*0.06,  hx,   top)
+      ctx2.closePath()
+      break
+    }
   }
 }
 
@@ -581,7 +590,6 @@ function pixelRenderMainCanvas(hoveredCell) {
   // Pass 2: render each layer with its own params (reverse so index-0 = top of list = top of canvas)
   ;[...pixelState.layers].reverse().forEach(layer => {
     if (layer.visible === false) return
-    if (layer.fusion) { renderLayerFused(ctx, layer, char); return }
     const glyph = layer.glyphs[char]; if (!glyph) return
     const { rows: lr, cols: lc, smooth: ls=0, skew: lsk=0, cellW: lw=15, cellH: lh=15 } = layer
     const lr2 = ls / 100, lSkew = lsk / 100
@@ -623,78 +631,6 @@ function pixelRenderMainCanvas(hoveredCell) {
   }
 }
 
-// Fusion (metaball/goo) renderer for a single layer
-function renderLayerFused(ctx, layer, char) {
-  const glyph = layer.glyphs[char]; if (!glyph) return
-  if (!glyph.some(row => row?.some(v => v))) return  // all-false glyph → skip
-
-  const { rows: lr, cols: lc, smooth: ls=0, skew: lsk=0, cellW: lw=15, cellH: lh=15 } = layer
-  const lr2 = ls / 100, lSkew = lsk / 100
-  const dpr = window.devicePixelRatio || 1
-  const str = (layer.fusionStr ?? 50) / 100  // 0–1
-
-  // Offscreen canvas: must cover all possible cell positions for this layer.
-  // Use main canvas dimensions as base; expand if layer cells extend beyond.
-  const mainW = canvas.width || 1, mainH = canvas.height || 1
-  const off = document.createElement('canvas')
-  off.width = mainW; off.height = mainH
-  const offCtx = off.getContext('2d')
-  if (!offCtx) return
-  offCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-  // Blur radius: fusionStr controls how far influence spreads (in CSS px)
-  const blurPx = Math.max(1.5, str * Math.min(lw, lh) * 1.1)
-  offCtx.filter = `blur(${blurPx.toFixed(2)}px)`
-  offCtx.fillStyle = '#ffffff'
-
-  for (let r = 0; r < lr; r++) {
-    for (let c = 0; c < lc; c++) {
-      if (!glyph[r]?.[c]) continue
-      const { x, y } = layerGetCellPos(layer, c, r)
-      offCtx.save()
-      offCtx.translate(x, y)
-      if (lSkew !== 0) offCtx.transform(1, 0, lSkew, 1, 0, 0)
-      shapePath(offCtx, lw, lh, lr2, layer.shape)
-      offCtx.fill()
-      offCtx.restore()
-    }
-  }
-
-  // Read blurred alpha channel (NOT R channel — white shapes always have R=255).
-  // The alpha channel is the true Gaussian "influence field" for metaball merging.
-  const imageData = offCtx.getImageData(0, 0, mainW, mainH)
-  const d = imageData.data
-  const [r255, g255, b255] = hexToRgb(layer.color)
-
-  // Threshold descends from 0.55 → 0.30 as str goes 0→1
-  // Lower threshold = more pixels survive = wider fusion / stronger merge
-  const thresh = Math.round((0.55 - str * 0.25) * 255)
-  const band = 10  // ±10 alpha units for smooth cubic-Hermite anti-aliased edge
-  const lo = Math.max(0, thresh - band), hi = Math.min(255, thresh + band)
-
-  for (let i = 0; i < d.length; i += 4) {
-    const a = d[i + 3]  // alpha channel = metaball influence value
-    if (a <= lo) {
-      d[i] = d[i+1] = d[i+2] = d[i+3] = 0
-    } else if (a >= hi) {
-      d[i] = r255; d[i+1] = g255; d[i+2] = b255; d[i+3] = 255
-    } else {
-      const t = (a - lo) / (hi - lo)
-      const sm = t * t * (3 - 2 * t)  // cubic Hermite smooth-step
-      d[i] = r255; d[i+1] = g255; d[i+2] = b255
-      d[i+3] = Math.round(sm * 255)
-    }
-  }
-  offCtx.putImageData(imageData, 0, 0)
-
-  // Composite back in physical-pixel space (bypass DPR transform)
-  ctx.save()
-  ctx.setTransform(1, 0, 0, 1, 0, 0)
-  ctx.globalAlpha = layer.opacity
-  ctx.drawImage(off, 0, 0)
-  ctx.globalAlpha = 1
-  ctx.restore()
-}
 
 // ─────────────────────────────────────────────
 //  EXPORT HELPERS (canvas-based render + vector trace)
@@ -732,61 +668,18 @@ function pixelRenderCharToCanvas(char, scale) {
     const { rows: lr, cols: lc, cellW: lw = 15, cellH: lh = 15, smooth: ls = 0, skew: lsk = 0 } = layer
     const lr2 = ls / 100, lSkew = lsk / 100
 
-    if (layer.fusion) {
-      const str = (layer.fusionStr ?? 50) / 100
-      const blurPx = Math.max(1, str * Math.min(lw, lh) * 1.1 * scale)
-      // Pad the fusion canvas so blur halos at bounding-box edges are NOT clipped.
-      // Without padding, Gaussian blur extending beyond canvas edges gets truncated,
-      // destroying the Fusion Str metaball effect entirely.
-      const bpad = Math.ceil(blurPx * 2.5)
-      const fusCanvas = document.createElement('canvas')
-      fusCanvas.width = pW + bpad * 2; fusCanvas.height = pH + bpad * 2
-      const fusCtx = fusCanvas.getContext('2d')
-      if (!fusCtx) continue
-      fusCtx.filter = `blur(${blurPx.toFixed(2)}px)`
-      fusCtx.fillStyle = '#ffffff'
-      for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
-        if (!g[r]?.[c]) continue
-        const { x, y } = layerGetCellPos(layer, c, r)
-        fusCtx.save()
-        // Offset by bpad so shapes near bounding-box edges have room to blur
-        fusCtx.translate((x - minX) * scale + bpad, (y - minY) * scale + bpad)
-        if (lSkew !== 0) fusCtx.transform(1, 0, lSkew, 1, 0, 0)
-        shapePath(fusCtx, lw * scale, lh * scale, lr2, layer.shape)
-        fusCtx.fill(); fusCtx.restore()
-      }
-      fusCtx.filter = 'none'
-      const fW = fusCanvas.width, fH = fusCanvas.height
-      const imgData = fusCtx.getImageData(0, 0, fW, fH)
-      const d = imgData.data
-      const [fr, fg, fb] = hexToRgb(layer.color)
-      const thresh = Math.round((0.55 - str * 0.25) * 255)
-      const band = 10, lo = Math.max(0, thresh - band), hi = Math.min(255, thresh + band)
-      for (let i = 0; i < d.length; i += 4) {
-        const a = d[i + 3]
-        if (a <= lo) { d[i] = d[i+1] = d[i+2] = d[i+3] = 0 }
-        else if (a >= hi) { d[i] = fr; d[i+1] = fg; d[i+2] = fb; d[i+3] = 255 }
-        else { const t=(a-lo)/(hi-lo),sm=t*t*(3-2*t); d[i]=fr;d[i+1]=fg;d[i+2]=fb;d[i+3]=Math.round(sm*255) }
-      }
-      fusCtx.putImageData(imgData, 0, 0)
-      exportCtx.save(); exportCtx.globalAlpha = layer.opacity
-      // Crop the padded canvas back to the export canvas viewport (bpad offset)
-      exportCtx.drawImage(fusCanvas, bpad, bpad, pW, pH, 0, 0, pW, pH)
-      exportCtx.globalAlpha = 1; exportCtx.restore()
-    } else {
-      exportCtx.save(); exportCtx.globalAlpha = layer.opacity
-      exportCtx.fillStyle = layer.color
-      for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
-        if (!g[r]?.[c]) continue
-        const { x, y } = layerGetCellPos(layer, c, r)
-        exportCtx.save()
-        exportCtx.translate((x - minX) * scale, (y - minY) * scale)
-        if (lSkew !== 0) exportCtx.transform(1, 0, lSkew, 1, 0, 0)
-        shapePath(exportCtx, lw * scale, lh * scale, lr2, layer.shape)
-        exportCtx.fill(); exportCtx.restore()
-      }
-      exportCtx.restore()
+    exportCtx.save(); exportCtx.globalAlpha = layer.opacity
+    exportCtx.fillStyle = layer.color
+    for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
+      if (!g[r]?.[c]) continue
+      const { x, y } = layerGetCellPos(layer, c, r)
+      exportCtx.save()
+      exportCtx.translate((x - minX) * scale, (y - minY) * scale)
+      if (lSkew !== 0) exportCtx.transform(1, 0, lSkew, 1, 0, 0)
+      shapePath(exportCtx, lw * scale, lh * scale, lr2, layer.shape)
+      exportCtx.fill(); exportCtx.restore()
     }
+    exportCtx.restore()
   }
   return { canvas: exportCanvas, cssW, cssH, pW, pH, minX, minY }
 }
@@ -1220,13 +1113,31 @@ function updateGridOpacity(val) {
     state.gridOpacity = val / 100
     const vEl = document.getElementById('v-gridOpacity')
     if (vEl) vEl.textContent = val
+    const sl = document.getElementById('sl-gridOpacity')
+    if (sl) sl.value = val
     gridRenderMainCanvas(hoveredCell); gridAutoSave()
   } else {
     pixelState.gridOpacity = val / 100
     const vEl = document.getElementById('pv-gridOpacity')
     if (vEl) vEl.textContent = val
+    const sl = document.getElementById('psl-gridOpacity')
+    if (sl) sl.value = val
     pixelRenderMainCanvas(hoveredCell); pixelAutoSave()
   }
+}
+
+function gridOpacityDown() {
+  const cur = currentMode === 'grid'
+    ? Math.round((state.gridOpacity ?? 1) * 100)
+    : Math.round((pixelState.gridOpacity ?? 1) * 100)
+  updateGridOpacity(Math.max(0, cur - 10))
+}
+
+function gridOpacityUp() {
+  const cur = currentMode === 'grid'
+    ? Math.round((state.gridOpacity ?? 1) * 100)
+    : Math.round((pixelState.gridOpacity ?? 1) * 100)
+  updateGridOpacity(Math.min(100, cur + 10))
 }
 
 function updatePixelColor(hex) {
@@ -1296,13 +1207,6 @@ function toggleLayerVisible(idx) {
   pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
 }
 
-function toggleLayerFusion(idx) {
-  pushHistory()
-  const l = pixelState.layers[idx]
-  l.fusion = !l.fusion
-  renderLayerList()
-  pixelRenderMainCanvas(hoveredCell); renderAllThumbnails(); pixelRenderPreview(); pixelAutoSave()
-}
 
 function moveLayerUp(idx) {
   if (idx <= 0) return
@@ -1328,7 +1232,6 @@ function moveLayerDown(idx) {
 
 const SVG_EYE_ON  = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 8C3 4 13 4 15 8C13 12 3 12 1 8Z"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/></svg>`
 const SVG_EYE_OFF = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 8C3 4 13 4 15 8C13 12 3 12 1 8Z"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/><line x1="2" y1="2" x2="14" y2="14"/></svg>`
-const SVG_FUSION  = `<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><ellipse cx="4" cy="6" rx="3.2" ry="3.2"/><ellipse cx="8" cy="6" rx="3.2" ry="3.2"/></svg>`
 
 function hexToRgb(hex) {
   return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]
@@ -1342,7 +1245,8 @@ function renderLayerList() {
     return `
     <div class="layer-item${idx === pixelState.activeLayerIdx ? ' active' : ''}${hidden ? ' layer-hidden' : ''}" onclick="setActiveLayer(${idx})">
       <div class="layer-row1">
-        <div class="layer-swatch" style="background:${layer.color};opacity:${hidden ? 0.3 : 1}"></div>
+        <div class="layer-swatch" style="background:${layer.color};opacity:${hidden ? 0.3 : 1};cursor:pointer" title="Change color"
+          onclick="event.stopPropagation();setActiveLayer(${idx});setTimeout(()=>document.getElementById('pixel-color-picker').click(),0)"></div>
         <input class="layer-name-input" value="${layer.name.replace(/"/g,'&quot;')}"
           onclick="event.stopPropagation()"
           onchange="setLayerName(${idx},this.value)">
@@ -1356,7 +1260,6 @@ function renderLayerList() {
       </div>
       <div class="layer-row2" onclick="event.stopPropagation()">
         <span class="layer-shape-tag">${layer.shape}</span>
-        <button class="layer-icon-btn layer-fusion-btn${layer.fusion ? ' fusion-on' : ''}" title="Fusion ${layer.fusion ? 'On' : 'Off'}" onclick="toggleLayerFusion(${idx})">${SVG_FUSION}</button>
         <div class="layer-opacity-wrap">
           <input type="range" class="layer-opacity-slider" min="0" max="100"
             value="${Math.round(layer.opacity * 100)}"
@@ -1462,13 +1365,16 @@ function docsSave(name) {
   updateDocHeader()
   const docs = docsGetAll()
   const isGrid = currentMode === 'grid'
+  const _previewText = document.getElementById('preview-large-input')?.value || ''
   const config = isGrid
     ? { rows:state.rows,cols:state.cols,gutterX:state.gutterX,gutterY:state.gutterY,
         ratio:state.ratio,gridType:state.gridType,cellColor:state.cellColor,
-        polar:state.polar,triangular:state.triangular,organic:state.organic }
+        polar:state.polar,triangular:state.triangular,organic:state.organic,
+        previewText: _previewText }
     : { showGrid: pixelState.showGrid, gridOpacity: pixelState.gridOpacity,
         layers: JSON.parse(JSON.stringify(pixelState.layers)),
-        activeLayerIdx: pixelState.activeLayerIdx }
+        activeLayerIdx: pixelState.activeLayerIdx,
+        previewText: _previewText }
   const doc = {
     id: Date.now(),
     name: name || 'Untitled',
@@ -1492,6 +1398,8 @@ function docsLoad(id) {
     Object.assign(state, doc.config)
     migrateGridGlyphs(doc)
     gridSyncSliders(); setGridType(state.gridType)
+    const inp = document.getElementById('preview-large-input')
+    if (inp && doc.config?.previewText !== undefined) inp.value = doc.config.previewText
   } else {
     migratePixelLoad(doc)
     pixelSyncSliders()
@@ -1557,7 +1465,7 @@ function renderDocList() {
     <div class="doc-item" data-id="${d.id}">
       <div class="doc-info" onclick="docsLoad(${d.id})">
         <div class="doc-name">${d.name}</div>
-        <div class="doc-meta">${d.mode.toUpperCase()} · ${d.savedAt}</div>
+        <div class="doc-meta"><span class="doc-mode-tag">${d.mode.toUpperCase()}</span>${d.savedAt}</div>
       </div>
       <div class="doc-actions">
         <button class="doc-action-btn" onclick="docsRename(${d.id})" title="Rename">✎</button>
@@ -1654,7 +1562,7 @@ function gridSyncSliders() {
 
 function pixelSyncSliders() {
   const al = pixelActiveLayer()
-  ;['rows','cols','cellW','cellH','gapX','gapY','smooth','skew','rowStagger','colStagger','offsetX','offsetY','fusionStr'].forEach(k=>{
+  ;['rows','cols','cellW','cellH','gapX','gapY','smooth','skew','rowStagger','colStagger','offsetX','offsetY'].forEach(k=>{
     const sl=document.getElementById('psl-'+k), vEl=document.getElementById('pv-'+k)
     const val = al?.[k] ?? 0
     if(sl) sl.value=val; if(vEl) { if(vEl.tagName==='INPUT') vEl.value=val; else vEl.textContent=val }
@@ -1707,7 +1615,6 @@ function migratePixelLoad(data) {
     pixelState.layers.forEach(l => {
       if (!('rows' in l)) Object.assign(l, globalParams)
       if (!('offsetX' in l)) { l.offsetX = 0; l.offsetY = 0 }
-      if (!('fusion' in l)) { l.fusion = false; l.fusionStr = 50 }
       CHARSET.forEach(c => { if (!(c in l.glyphs)) l.glyphs[c] = null })
     })
   } else {
@@ -1718,6 +1625,9 @@ function migratePixelLoad(data) {
       opacity: 1.0, glyphs: oldGlyphs, ...globalParams }]
     pixelState.activeLayerIdx = 0
   }
+  // Restore preview text if saved
+  const inp = document.getElementById('preview-large-input')
+  if (inp && cfg.previewText !== undefined) inp.value = cfg.previewText
 }
 
 
@@ -1811,7 +1721,6 @@ function cellShapeSVGStr(w, h, r2, type) {
 }
 
 // Build a fully-vector SVG for pixel mode — no embedded rasters.
-// Fusion layers use SVG feGaussianBlur + feColorMatrix + feFlood metaball filter.
 function buildPixelModeSVG(char) {
   const layers = [...pixelState.layers].reverse()
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -1833,8 +1742,8 @@ function buildPixelModeSVG(char) {
     if (layer.visible === false) return
     const g = layer.glyphs[char]; if (!g) return
     if (!g.some(row=>row?.some(v=>v))) return
-    const { rows:lr, cols:lc, cellW:lw=15, cellH:lh=15, smooth:ls=0, skew:lsk=0, shape, color, opacity, fusion } = layer
-    const r2=ls/100, skewF=lsk/100, str=(layer.fusionStr??50)/100
+    const { rows:lr, cols:lc, cellW:lw=15, cellH:lh=15, smooth:ls=0, skew:lsk=0, shape, color, opacity } = layer
+    const r2=ls/100, skewF=lsk/100
 
     const cells=[]
     for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
@@ -1848,22 +1757,7 @@ function buildPixelModeSVG(char) {
     }
     if (!cells.length) return
 
-    if (fusion) {
-      const blurPx = parseFloat(Math.max(1, str*Math.min(lw,lh)*1.1).toFixed(2))
-      const thr = 0.55 - str*0.25
-      const scale = 30, offset = parseFloat((-thr*scale).toFixed(3))
-      const fid = `fl${li}`
-      defs.push(
-        `<filter id="${fid}" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">` +
-        `<feGaussianBlur in="SourceGraphic" stdDeviation="${blurPx}" result="b"/>` +
-        `<feColorMatrix in="b" type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 ${scale} ${offset}" result="m"/>` +
-        `<feFlood flood-color="${color}" result="c"/>` +
-        `<feComposite in="c" in2="m" operator="in"/>` +
-        `</filter>`)
-      groups.push(`<g filter="url(#${fid})" opacity="${opacity}" fill="white">\n${cells.join('\n')}\n</g>`)
-    } else {
-      groups.push(`<g fill="${color}" opacity="${opacity}">\n${cells.join('\n')}\n</g>`)
-    }
+    groups.push(`<g fill="${color}" opacity="${opacity}">\n${cells.join('\n')}\n</g>`)
   })
 
   const defsStr = defs.length ? `<defs>\n${defs.join('\n')}\n</defs>\n` : ''
@@ -1871,6 +1765,20 @@ function buildPixelModeSVG(char) {
 }
 
 function downloadSVG() {
+  // Preview mode: embed the preview canvas as an SVG <image>
+  if (previewOpen) {
+    const pc = document.getElementById('preview-large-canvas')
+    if (!pc || pc.width === 0 || pc.height === 0) { setStatus('Nothing to export'); return }
+    const cssW = parseFloat(pc.style.width) || pc.width
+    const cssH = parseFloat(pc.style.height) || pc.height
+    const dataURL = pc.toDataURL('image/png')
+    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${cssW}" height="${cssH}" viewBox="0 0 ${cssW} ${cssH}">\n<image width="${cssW}" height="${cssH}" xlink:href="${dataURL}"/>\n</svg>`
+    const blob = new Blob([svgContent], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `${getCurrentDocName()}-preview.svg`; a.click()
+    URL.revokeObjectURL(url); setStatus('SVG exported: preview')
+    return
+  }
   const char = CHARSET[currentCharIdx]
   let svgContent
   if (currentMode === 'grid') {
@@ -1891,6 +1799,21 @@ function downloadSVG() {
 }
 
 function downloadPNG() {
+  // Preview mode: export the preview canvas directly
+  if (previewOpen) {
+    const pc = document.getElementById('preview-large-canvas')
+    if (!pc || pc.width === 0 || pc.height === 0) { setStatus('Nothing to export'); return }
+    pc.toBlob(blob => {
+      if (!blob) { setStatus('PNG export failed'); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `${getCurrentDocName()}-preview.png`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
+      setStatus('PNG exported: preview')
+    }, 'image/png')
+    return
+  }
   const char = CHARSET[currentCharIdx]
   const fname = `${getCurrentDocName()}-${char === '/' ? 'slash' : char}.png`
   const triggerBlob = (cvs) => {
@@ -2012,7 +1935,7 @@ function _charGlyphName(char) {
 }
 
 // Render char to an offscreen canvas (white shapes on transparent), including all
-// layer effects: fusion/metaball, skew, smooth, gap, stagger, offset.
+// layer effects: skew, smooth, gap, stagger, offset.
 // Returns {canvas, w, h} in CSS-pixel units, or null if empty.
 function _fontRenderChar(char, RS) {
   let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity
@@ -2040,53 +1963,20 @@ function _fontRenderChar(char, RS) {
     if (!g.some(row=>row?.some(v=>v))) continue
     const {cellW:lw=15, cellH:lh=15, rows:lr, cols:lc,
            smooth:ls=0, skew:lsk=0, shape='rect',
-           fusion, fusionStr=50, opacity=1} = layer
-    const r2=ls/100, sk=lsk/100, str=(fusionStr??50)/100
+           opacity=1} = layer
+    const r2=ls/100, sk=lsk/100
 
-    if (fusion) {
-      const blurPx = Math.max(1, str * Math.min(lw,lh) * 1.1 * RS)
-      const bp = Math.ceil(blurPx * 3)
-      const fc = document.createElement('canvas')
-      fc.width = PW+bp*2; fc.height = PH+bp*2
-      const fctx = fc.getContext('2d')
-      fctx.filter = `blur(${blurPx.toFixed(2)}px)`
-      fctx.fillStyle = '#fff'
-      for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
-        if (!g[r]?.[c]) continue
-        const {x,y} = layerGetCellPos(layer,c,r)
-        fctx.save()
-        fctx.translate((x-minX)*RS+bp, (y-minY)*RS+bp)
-        if (sk) fctx.transform(1,0,sk,1,0,0)
-        shapePath(fctx, lw*RS, lh*RS, r2, shape)
-        fctx.fill(); fctx.restore()
-      }
-      fctx.filter = 'none'
-      // Threshold: keep pixels above threshold as opaque white
-      const imd = fctx.getImageData(0,0,fc.width,fc.height)
-      const d = imd.data
-      const thr = Math.round((0.55 - str*0.25) * 255)
-      for (let i=0;i<d.length;i+=4) {
-        const a=d[i+3]
-        d[i]=d[i+1]=d[i+2]=255
-        d[i+3] = a>thr ? 255 : 0
-      }
-      fctx.putImageData(imd,0,0)
-      ctx.save(); ctx.globalAlpha=opacity
-      ctx.drawImage(fc, bp, bp, PW, PH, 0, 0, PW, PH)
-      ctx.restore()
-    } else {
-      ctx.save(); ctx.globalAlpha=opacity; ctx.fillStyle='#fff'
-      for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
-        if (!g[r]?.[c]) continue
-        const {x,y} = layerGetCellPos(layer,c,r)
-        ctx.save()
-        ctx.translate((x-minX)*RS, (y-minY)*RS)
-        if (sk) ctx.transform(1,0,sk,1,0,0)
-        shapePath(ctx, lw*RS, lh*RS, r2, shape)
-        ctx.fill(); ctx.restore()
-      }
-      ctx.restore()
+    ctx.save(); ctx.globalAlpha=opacity; ctx.fillStyle='#fff'
+    for (let r=0;r<lr;r++) for (let c=0;c<lc;c++) {
+      if (!g[r]?.[c]) continue
+      const {x,y} = layerGetCellPos(layer,c,r)
+      ctx.save()
+      ctx.translate((x-minX)*RS, (y-minY)*RS)
+      if (sk) ctx.transform(1,0,sk,1,0,0)
+      shapePath(ctx, lw*RS, lh*RS, r2, shape)
+      ctx.fill(); ctx.restore()
     }
+    ctx.restore()
   }
   return { canvas: cvs, cssW, cssH, RS }
 }
@@ -2324,13 +2214,12 @@ function switchCharTab(tab) {
 //  KEYBOARD
 // ─────────────────────────────────────────────
 document.addEventListener('keydown', e=>{
-  if (e.key==='Escape' && previewOpen) { togglePreview(); return }
   if ((e.ctrlKey||e.metaKey)&&(e.key==='='||e.key==='+')) { e.preventDefault(); zoomIn(); return }
   if ((e.ctrlKey||e.metaKey)&&e.key==='-') { e.preventDefault(); zoomOut(); return }
   if ((e.ctrlKey||e.metaKey)&&e.key==='0') { e.preventDefault(); resetZoom(); return }
   if ((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey) { e.preventDefault(); undo(); return }
   if ((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))) { e.preventDefault(); redo(); return }
-  if (e.target.tagName==='INPUT') return
+  if (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA') return
   if (e.key==='Delete'||e.key==='Backspace') { clearGlyph(); return }
 })
 
@@ -2677,10 +2566,12 @@ function cloudDocPayload(name) {
     config:     isGrid
       ? { rows:state.rows, cols:state.cols, gutterX:state.gutterX, gutterY:state.gutterY,
           ratio:state.ratio, gridType:state.gridType, cellColor:state.cellColor,
-          polar:state.polar, triangular:state.triangular, organic:state.organic }
+          polar:state.polar, triangular:state.triangular, organic:state.organic,
+          previewText: document.getElementById('preview-large-input')?.value || '' }
       : { showGrid: pixelState.showGrid, gridOpacity: pixelState.gridOpacity,
           layers: JSON.parse(JSON.stringify(pixelState.layers)),
-          activeLayerIdx: pixelState.activeLayerIdx },
+          activeLayerIdx: pixelState.activeLayerIdx,
+          previewText: document.getElementById('preview-large-input')?.value || '' },
     glyphs: isGrid ? JSON.parse(JSON.stringify(state.glyphsByType)) : null,
     updated_at: new Date().toISOString()
   }
@@ -2741,6 +2632,8 @@ async function docsLoadCloud(id) {
     Object.assign(state, doc.config)
     migrateGridGlyphs(doc)
     gridSyncSliders(); setGridType(state.gridType)
+    const inp = document.getElementById('preview-large-input')
+    if (inp && doc.config?.previewText !== undefined) inp.value = doc.config.previewText
   } else {
     migratePixelLoad(doc)
     pixelSyncSliders()
@@ -2923,11 +2816,161 @@ function openDocManagerPatched() {
 function hideLanding() {
   const el = document.getElementById('landing')
   if (el) { el.classList.remove('visible'); el.classList.add('hidden') }
+  stopLogoAnim()
 }
 function showLanding() {
   const el = document.getElementById('landing')
   if (el) { el.classList.remove('hidden'); el.classList.add('visible') }
   setTimeout(startLandingAnims, 300)
+  document.fonts.ready.then(() => initLogoAnim())
+}
+
+// ── Logo pixel animation ──
+let _logoRaf = null
+
+function stopLogoAnim() {
+  if (_logoRaf) { cancelAnimationFrame(_logoRaf); _logoRaf = null }
+}
+
+function initLogoAnim() {
+  stopLogoAnim()
+  const canvas = document.getElementById('logo-canvas')
+  const fallback = document.getElementById('logo-fallback')
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  const DPR = Math.min(window.devicePixelRatio || 1, 3)
+
+  // ── Step 1: rasterize 'dottypo' into pixel positions ──
+  const FONT_PX = 234
+  const GRID_B  = 14   // single grid — all steps share same dot positions (no jump)
+
+  const off = document.createElement('canvas')
+  off.width = 2400; off.height = 340
+  const oc = off.getContext('2d')
+  oc.font = `700 ${FONT_PX}px "DM Sans", sans-serif`
+  oc.textBaseline = 'top'
+
+  // x boundary between 'dot' and 'typo' (in off-canvas coords)
+  const DOT_END = 4 + oc.measureText('dot').width
+
+  oc.clearRect(0, 0, off.width, off.height)
+  oc.fillStyle = '#fff'
+  oc.fillText('dottypo', 4, 20)
+  const imd = oc.getImageData(0, 0, off.width, off.height)
+  const d = imd.data
+  const baseS = { dot: [], typo: [] }
+  for (let y = 0; y < off.height; y += GRID_B) {
+    for (let x = 0; x < off.width; x += GRID_B) {
+      const i = (y * off.width + x) * 4
+      if (d[i + 3] > 55) {
+        if (x < DOT_END) baseS.dot.push([x, y])
+        else baseS.typo.push([x, y])
+      }
+    }
+  }
+
+  const allBase = [...baseS.dot, ...baseS.typo]
+  if (!allBase.length) return
+
+  // canvas size
+  const bxs = allBase.map(p => p[0]), bys = allBase.map(p => p[1])
+  const minX = Math.min(...bxs), maxX = Math.max(...bxs)
+  const minY = Math.min(...bys), maxY = Math.max(...bys)
+  const pad  = 18
+  const cssW = maxX - minX + GRID_B + pad * 2
+  const cssH = maxY - minY + GRID_B + pad * 2
+
+  canvas.width  = cssW * DPR
+  canvas.height = cssH * DPR
+  canvas.style.width  = cssW + 'px'
+  canvas.style.height = cssH + 'px'
+  ctx.scale(DPR, DPR)
+
+  // show canvas, hide text fallback
+  canvas.style.opacity = '1'
+  if (fallback) fallback.style.display = 'none'
+
+  // dot = fluorescent green, typo = white
+  const C_DOT  = '#9dff6a'
+  const C_TYPO = '#ffffff'
+
+  // ── Step 2: animation loop ──
+  const STEPS = [
+    { shape: 'rect',    sw: 0.75, sh: 0.75, skew:  0.00 },  // compact squares
+    { shape: 'circle',  sw: 1.42, sh: 1.42, skew:  0.00 },  // large overlapping circles → bold filled look
+    { shape: 'diamond', sw: 0.60, sh: 0.60, skew:  0.00 },  // sparse diamonds → lots of space
+    { shape: 'cross',   sw: 0.85, sh: 0.85, skew: -0.42 },  // skewed
+    { shape: 'star4',   sw: 2.00, sh: 0.36, skew:  0.00 },  // very wide flat → horizontal stripe effect
+    { shape: 'heart',   sw: 0.90, sh: 1.10, skew:  0.00 },  // tall hearts → text stretched 110% vertically
+  ]
+  const CYCLE     = 2083
+  const BLEND_AT  = 0.72
+  const SIZE_BASE = GRID_B * 0.9
+
+  const lerp = (a, b, t) => a + (b - a) * t
+  const ease = t => 0.5 * (1 - Math.cos(t * Math.PI))
+
+  // draw all glyphs in a given shape/size at a given opacity
+  function drawGlyphs(shape, szW, szH, alpha) {
+    ctx.globalAlpha = alpha
+    for (const [color, pts] of [[C_DOT, baseS.dot], [C_TYPO, baseS.typo]]) {
+      ctx.fillStyle = color
+      for (const [px, py] of pts) {
+        const cx = px - minX + pad + GRID_B / 2
+        const cy = py - minY + pad + GRID_B / 2
+        ctx.save()
+        ctx.translate(cx - szW / 2, cy - szH / 2)
+        shapePath(ctx, szW, szH, 0.15, shape)
+        ctx.fill()
+        ctx.restore()
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  let _start = null
+
+  function frame(ts) {
+    if (!_start) _start = ts
+    const t = ts - _start
+
+    const si    = Math.floor(t / CYCLE) % STEPS.length
+    const phase = (t % CYCLE) / CYCLE
+    const from  = STEPS[si]
+    const to    = STEPS[(si + 1) % STEPS.length]
+
+    const blend    = phase < BLEND_AT ? 0 : ease((phase - BLEND_AT) / (1 - BLEND_AT))
+    const curSW    = lerp(from.sw,   to.sw,   blend) * SIZE_BASE
+    const curSH    = lerp(from.sh,   to.sh,   blend) * SIZE_BASE
+    const curSkew  = lerp(from.skew, to.skew, blend)
+
+    // gentle breathing
+    const breath = 0.92 + 0.08 * Math.sin(t * 0.00175 * Math.PI)
+    const szW = curSW * breath
+    const szH = curSH * breath
+
+    ctx.clearRect(0, 0, cssW, cssH)
+    ctx.save()
+
+    if (curSkew !== 0) {
+      ctx.transform(1, 0, curSkew, 1, -cssH / 2 * curSkew, 0)
+    }
+
+    if (blend === 0) {
+      // static phase: single full-opacity draw
+      drawGlyphs(from.shape, szW, szH, 1)
+    } else {
+      // cross-fade: old shape fades out, new shape fades in, sizes lerp together
+      drawGlyphs(from.shape, szW, szH, 1 - blend)
+      drawGlyphs(to.shape,   szW, szH, blend)
+    }
+
+    ctx.restore()
+
+    _logoRaf = requestAnimationFrame(frame)
+  }
+
+  _logoRaf = requestAnimationFrame(frame)
 }
 
 // ── Landing step animations ──
@@ -3108,27 +3151,56 @@ function init() {
     renderAllThumbnails(); renderPreview()
     setStatus('Log in to save your work')
   }, 50)
+  // start logo animation (landing is visible on first load)
+  document.fonts.ready.then(() => initLogoAnim())
 }
 
 // ─────────────────────────────────────────────
 //  FULL PREVIEW
 // ─────────────────────────────────────────────
 let previewOpen = false
+let previewAlign = 'left'
+
+function setPreviewAlign(align) {
+  previewAlign = align
+  ;['left','center','right'].forEach(a => {
+    const btn = document.getElementById('preview-align-'+a)
+    if (btn) btn.classList.toggle('active', a === align)
+  })
+  renderLargePreview()
+}
+
+function _syncPreviewBtns() {
+  const btnPreview = document.getElementById('btn-preview')
+  const btnDesign  = document.getElementById('btn-design')
+  if (btnPreview) btnPreview.classList.toggle('active', previewOpen)
+  if (btnDesign)  btnDesign.classList.toggle('active', !previewOpen)
+}
+
+function showPreview() {
+  if (previewOpen) return
+  previewOpen = true
+  const overlay = document.getElementById('preview-overlay')
+  if (!overlay) return
+  overlay.style.display = 'flex'
+  _syncPreviewBtns()
+  setTimeout(() => {
+    const inp = document.getElementById('preview-large-input')
+    if (inp) inp.focus()
+    renderLargePreview()
+  }, 20)
+}
+
+function showDesign() {
+  if (!previewOpen) return
+  previewOpen = false
+  const overlay = document.getElementById('preview-overlay')
+  if (overlay) overlay.style.display = 'none'
+  _syncPreviewBtns()
+}
 
 function togglePreview() {
-  previewOpen = !previewOpen
-  const overlay = document.getElementById('preview-overlay')
-  const btn = document.getElementById('btn-preview')
-  if (!overlay) return
-  overlay.style.display = previewOpen ? 'flex' : 'none'
-  if (btn) btn.classList.toggle('active', previewOpen)
-  if (previewOpen) {
-    setTimeout(() => {
-      const inp = document.getElementById('preview-large-input')
-      if (inp) { inp.value = ''; inp.focus() }
-      renderLargePreview()
-    }, 20)
-  }
+  if (previewOpen) { showDesign() } else { showPreview() }
 }
 
 function renderLargePreview() {
@@ -3171,9 +3243,13 @@ function renderLargePreviewGrid(text, pc, targetH, lineHPct = 130, lspc = 0) {
   c2.fillStyle = state.cellColor
   lines.forEach((line, li) => {
     const yOff = li * lineH
+    const lineW = line.length * (charW + extra)
+    const startX = previewAlign === 'right' ? maxLineW - lineW
+                 : previewAlign === 'center' ? (maxLineW - lineW) / 2
+                 : 0
     for (let ci = 0; ci < line.length; ci++) {
       const glyph = gridGlyphs()[line[ci]]; if (!glyph) continue
-      c2.save(); c2.translate(ci * (charW + extra), yOff); c2.scale(scale, scale)
+      c2.save(); c2.translate(startX + ci * (charW + extra), yOff); c2.scale(scale, scale)
       for (const { r, c, path } of gridPaths) { if (glyph[r]?.[c]) c2.fill(path) }
       c2.restore()
     }
@@ -3212,7 +3288,9 @@ function renderLargePreviewPixel(text, pc, targetH, lineHPct = 130, lspc = 0) {
   lines.forEach((line, li) => {
     if (!line) return
     const yOff = li * lineH
-    let x = 0
+    let x = previewAlign === 'right' ? totalW - lineWidths[li]
+          : previewAlign === 'center' ? (totalW - lineWidths[li]) / 2
+          : 0
     ;[...line].forEach((ch, i) => {
       const r = charMap.get(ch)
       if (r) {
@@ -3235,6 +3313,146 @@ window.addEventListener('resize', () => {
   applyZoom()
 })
 
+// ─────────────────────────────────────────────
+//  TOUR COACHMARK
+// ─────────────────────────────────────────────
+const TOUR_STEPS = [
+  {
+    target: '#auth-btn',
+    fallback: '#user-avatar-btn',
+    num: '01 / 08',
+    text: 'Sign up or log in to save your work — your fonts are stored to your account.'
+  },
+  {
+    target: 'button[onclick="openNewFileModal()"]',
+    num: '02 / 08',
+    text: 'Create a new file to get started — each file is one font project.'
+  },
+  {
+    target: '.left-panel-tabs',
+    targetEnd: '.pixel-shape-grid',
+    num: '03 / 08',
+    text: 'Choose a cell shape — the building block of every character in your font.'
+  },
+  {
+    target: '.param-panel',
+    fallback: '.panel-section',
+    num: '04 / 08',
+    text: 'Set grid size and effects — these apply to all characters globally.'
+  },
+  {
+    target: '.char-grid-header',
+    targetEnd: '#char-grid',
+    num: '05 / 08',
+    text: 'Pick a character from the grid on the right to start designing.'
+  },
+  {
+    target: '#canvas-wrapper',
+    num: '06 / 08',
+    text: 'Left-click to draw · Right-click to erase.'
+  },
+  {
+    target: '#btn-preview',
+    num: '07 / 08',
+    text: 'Switch to Preview to type freely and see your font as real text.'
+  },
+  {
+    target: '#export-btns',
+    num: '08 / 08',
+    text: 'Export — SVG · PNG for single glyphs, Font ↓ for a full OTF / TTF file.'
+  }
+]
+
+let _tourStep = 0
+
+function startTour() {
+  _tourStep = 0
+  document.getElementById('tour-overlay').style.display = 'block'
+  document.getElementById('tour-trigger-btn')?.classList.add('tour-active')
+  _tourRender()
+}
+
+function closeTour() {
+  document.getElementById('tour-overlay').style.display = 'none'
+  document.getElementById('tour-trigger-btn')?.classList.remove('tour-active')
+}
+
+function tourNext() {
+  _tourStep++
+  if (_tourStep >= TOUR_STEPS.length) { closeTour(); return }
+  _tourRender()
+}
+
+function _tourRender() {
+  const step = TOUR_STEPS[_tourStep]
+  const isLast = _tourStep === TOUR_STEPS.length - 1
+
+  // find target element — skip hidden elements (display:none)
+  const isVisible = e => e && e.offsetParent !== null && e.offsetWidth > 0
+  let el = document.querySelector(step.target)
+  if (!isVisible(el)) el = null
+  if (!el && step.fallback) {
+    const fb = document.querySelector(step.fallback)
+    if (isVisible(fb)) el = fb
+  }
+  if (!el) { tourNext(); return }
+
+  let rect = el.getBoundingClientRect()
+  // expand rect to cover a second element if specified
+  if (step.targetEnd) {
+    const el2 = document.querySelector(step.targetEnd)
+    if (el2) {
+      const r2 = el2.getBoundingClientRect()
+      rect = {
+        left:   Math.min(rect.left,   r2.left),
+        top:    Math.min(rect.top,    r2.top),
+        right:  Math.max(rect.right,  r2.right),
+        bottom: Math.max(rect.bottom, r2.bottom),
+        width:  0, height: 0
+      }
+      rect.width  = rect.right  - rect.left
+      rect.height = rect.bottom - rect.top
+    }
+  }
+  const pad = 6
+
+  // position highlight
+  const hl = document.getElementById('tour-highlight')
+  hl.style.left   = (rect.left - pad) + 'px'
+  hl.style.top    = (rect.top  - pad) + 'px'
+  hl.style.width  = (rect.width  + pad * 2) + 'px'
+  hl.style.height = (rect.height + pad * 2) + 'px'
+
+  // update card text
+  document.getElementById('tour-step-num').textContent = step.num
+  document.getElementById('tour-text').textContent = step.text
+  document.getElementById('tour-next').textContent = isLast ? 'Done ✓' : 'Next →'
+
+  // position card: right-side elements → card to the left; else below → above fallback
+  const card = document.getElementById('tour-card')
+  const cardH = 140, cardW = 280, margin = 14
+  const inRightHalf = rect.left + rect.width / 2 > window.innerWidth / 2
+
+  let top, left
+  if (inRightHalf) {
+    // place card to the LEFT of the highlight
+    left = rect.left - pad - margin - cardW
+    top  = rect.top + pad
+    if (left < 8) left = 8
+    if (top + cardH > window.innerHeight) top = window.innerHeight - cardH - 8
+  } else {
+    // place card BELOW, fall back ABOVE
+    top  = rect.bottom + pad + margin
+    left = rect.left + pad
+    if (top + cardH > window.innerHeight) top = rect.top - pad - margin - cardH
+    if (top < 8) top = 8
+  }
+  if (left + cardW > window.innerWidth) left = window.innerWidth - cardW - 16
+  if (left < 8) left = 8
+  card.style.top  = top  + 'px'
+  card.style.left = left + 'px'
+}
+
 Object.assign(window, {
   updateParam, setGridType, updateColor, updateGridSpecificParam,
   updatePixelParam, setPixelType, updatePixelColor,
@@ -3243,7 +3461,7 @@ Object.assign(window, {
   downloadSVG, downloadPNG, openFontExportModal, closeFontExportModal, selectFontOpt, doFontExport,
   zoomIn, zoomOut, resetZoom,
   toggleTheme, renderPreview, switchCharTab, switchMode,
-  togglePreview, renderLargePreview,
+  togglePreview, showPreview, showDesign, renderLargePreview, setPreviewAlign,
   openDocManager: openDocManagerPatched,
   closeDocManager, docsLoad: patchedDocsLoad, docsDelete: patchedDocsDelete,
   docsDeleteCloud, docsLoadCloud,
@@ -3251,11 +3469,12 @@ Object.assign(window, {
   createNewDoc, saveCurrentDoc,
   openNewFileModal, closeNewFileModal, setNewFileMode, confirmNewFile,
   hideLanding, showLanding, toggleHelp,
+  startTour, closeTour, tourNext,
   openAuthModal, closeAuthModal, switchAuthTab, handleAuthSubmit, signIn, signUp, signOut, toggleUserDropdown,
   openSubscriptionModal, closeSubscriptionModal, selectPlanTab, startTossPayment, renewSubscription,
   addPixelLayer, duplicatePixelLayer, removePixelLayer, setActiveLayer, setLayerOpacity, setLayerName,
-  toggleLayerVisible, toggleLayerFusion, moveLayerUp, moveLayerDown,
-  undo, redo, updateGridOpacity
+  toggleLayerVisible, moveLayerUp, moveLayerDown,
+  undo, redo, updateGridOpacity, gridOpacityDown, gridOpacityUp
 })
 
 init()

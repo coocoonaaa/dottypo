@@ -10,19 +10,17 @@
 
 <header>
   <div class="logo" onclick="showLanding()" style="cursor:pointer" title="Back to home"><span class="logo-dot">dot</span><span class="logo-typo">typo</span></div>
-  <div style="width:1px;height:18px;background:var(--border);"></div>
-  <div class="mode-toggle">
-    <button class="mode-btn active" id="btn-mode-pixel" onclick="switchMode('pixel')">Pixel</button>
-    <button class="mode-btn" id="btn-mode-grid" onclick="switchMode('grid')">Grid</button>
+  <!-- Design / Preview centered toggle -->
+  <div style="position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;">
+    <div class="header-view-tabs">
+      <button class="char-tab active" id="btn-design" onclick="showDesign()">Design</button>
+      <button class="char-tab" id="btn-preview" onclick="showPreview()">Preview</button>
+    </div>
   </div>
-  <div style="width:1px;height:18px;background:var(--border);"></div>
   <div class="header-tools">
-    <button class="btn" onclick="randomizeGlyph()">Random</button>
-    <button class="btn" onclick="toggleGrid()">Grid</button>
-    <button class="btn danger" onclick="clearGlyph()">Clear</button>
-    <div style="width:1px;height:18px;background:var(--border);"></div>
-    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:0.06em;margin-right:auto;" id="status-bar">Ready</div>
-    
+    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:0.06em;" id="status-bar">Ready</div>
+    <div style="flex:1"></div>
+
     <div class="file-mgmt">
       <span id="current-doc-name" style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;color:var(--text);margin-right:8px;">Untitled</span>
       <button class="btn" onclick="saveCurrentDoc()">Save</button>
@@ -30,11 +28,12 @@
       <button class="btn" onclick="openNewFileModal()">New</button>
     </div>
 
-    <button class="btn" id="btn-preview" onclick="togglePreview()">Preview</button>
     <div style="width:1px;height:18px;background:var(--border);"></div>
-    <button class="btn primary" onclick="downloadSVG()">SVG</button>
-    <button class="btn primary" onclick="downloadPNG()">PNG</button>
-    <button class="btn primary" onclick="openFontExportModal()">Font ↓</button>
+    <div id="export-btns" style="display:flex;align-items:center;gap:6px;">
+      <button class="btn" onclick="downloadSVG()">SVG</button>
+      <button class="btn" onclick="downloadPNG()">PNG</button>
+      <button class="btn" onclick="openFontExportModal()">Font ↓</button>
+    </div>
 
     <div style="width:1px;height:18px;background:var(--border);"></div>
     <button id="auth-btn" class="btn" onclick="openAuthModal()">Login</button>
@@ -66,8 +65,54 @@
 
 <div class="workspace">
 
+  <!-- FULL PREVIEW OVERLAY -->
+  <div id="preview-overlay" class="preview-overlay">
+    <div class="preview-input-row">
+      <textarea id="preview-large-input" class="preview-large-input"
+                placeholder="Type text to preview…" autocomplete="off" spellcheck="false"
+                oninput="renderLargePreview(); (currentMode==='grid'?gridAutoSave:pixelAutoSave)()"></textarea>
+    </div>
+    <div class="preview-stage">
+      <div class="preview-canvas-scroll" id="preview-canvas-scroll">
+        <canvas id="preview-large-canvas"></canvas>
+      </div>
+      <div class="preview-topbar">
+        <button class="zoom-btn" style="width:auto;padding:0 7px;font-size:9px;font-family:'DM Mono',monospace;letter-spacing:0.06em;pointer-events:none;">Size</button>
+        <input type="range" id="preview-size-slider" min="40" max="280" value="120" oninput="renderLargePreview()"
+               style="width:100px;height:3px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;">
+        <span id="preview-size-val" style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text3);min-width:22px;">120</span>
+        <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0;margin:0 2px;"></div>
+        <button class="zoom-btn" style="width:auto;padding:0 7px;font-size:9px;font-family:'DM Mono',monospace;letter-spacing:0.06em;pointer-events:none;">Line H</button>
+        <input type="range" id="preview-lineh-slider" min="80" max="300" value="130" oninput="renderLargePreview()"
+               style="width:100px;height:3px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;">
+        <span id="preview-lineh-val" style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text3);min-width:22px;">130</span>
+        <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0;margin:0 2px;"></div>
+        <button class="zoom-btn" style="width:auto;padding:0 7px;font-size:9px;font-family:'DM Mono',monospace;letter-spacing:0.06em;pointer-events:none;">Letter</button>
+        <input type="range" id="preview-lspc-slider" min="-20" max="100" value="0" oninput="renderLargePreview()"
+               style="width:100px;height:3px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;">
+        <span id="preview-lspc-val" style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text3);min-width:22px;">0</span>
+        <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0;margin:0 2px;"></div>
+        <button class="zoom-btn active" id="preview-align-left" onclick="setPreviewAlign('left')" data-tooltip="Left align" style="font-size:12px;">
+          <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><line x1="0" y1="1" x2="13" y2="1" stroke="currentColor" stroke-width="1.4"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.4"/><line x1="0" y1="9" x2="11" y2="9" stroke="currentColor" stroke-width="1.4"/></svg>
+        </button>
+        <button class="zoom-btn" id="preview-align-center" onclick="setPreviewAlign('center')" data-tooltip="Center align" style="font-size:12px;">
+          <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><line x1="0" y1="1" x2="13" y2="1" stroke="currentColor" stroke-width="1.4"/><line x1="2" y1="5" x2="11" y2="5" stroke="currentColor" stroke-width="1.4"/><line x1="1" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.4"/></svg>
+        </button>
+        <button class="zoom-btn" id="preview-align-right" onclick="setPreviewAlign('right')" data-tooltip="Right align" style="font-size:12px;">
+          <svg width="13" height="11" viewBox="0 0 13 11" fill="none"><line x1="0" y1="1" x2="13" y2="1" stroke="currentColor" stroke-width="1.4"/><line x1="4" y1="5" x2="13" y2="5" stroke="currentColor" stroke-width="1.4"/><line x1="2" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.4"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- LEFT PANEL -->
   <div class="left-panel">
+
+    <!-- ── MODE TABS ── -->
+    <div class="left-panel-tabs">
+      <button class="char-tab active" id="btn-mode-pixel" onclick="switchMode('pixel')">Pixel</button>
+      <button class="char-tab" id="btn-mode-grid" onclick="switchMode('grid')">Grid</button>
+    </div>
 
     <!-- ── GRID PANEL ── -->
     <div class="grid-panel">
@@ -198,35 +243,36 @@
       <div class="panel-section">
         <div class="panel-label">Pixel Shape</div>
         <div class="pixel-shape-grid">
-          <button class="pixel-type-btn active" onclick="setPixelType('rect')" data-type="rect" title="Rectangle">
+          <button class="pixel-type-btn" onclick="setPixelType('rect')" data-type="rect" title="Rect">
             <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="currentColor"/></svg>
-            <span>Rect</span>
           </button>
           <button class="pixel-type-btn" onclick="setPixelType('circle')" data-type="circle" title="Circle">
             <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="currentColor"/></svg>
-            <span>Circle</span>
           </button>
           <button class="pixel-type-btn" onclick="setPixelType('diamond')" data-type="diamond" title="Diamond">
             <svg width="16" height="16" viewBox="0 0 16 16"><polygon points="8,2 14,8 8,14 2,8" fill="currentColor"/></svg>
-            <span>Diamond</span>
           </button>
           <button class="pixel-type-btn" onclick="setPixelType('cross')" data-type="cross" title="Cross">
             <svg width="16" height="16" viewBox="0 0 16 16"><rect x="5" y="1" width="6" height="14" rx="1" fill="currentColor"/><rect x="1" y="5" width="14" height="6" rx="1" fill="currentColor"/></svg>
-            <span>Cross</span>
           </button>
           <button class="pixel-type-btn" onclick="setPixelType('star4')" data-type="star4" title="Star 4">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1 C8 5, 11 5, 15 8 C11 8, 11 11, 8 15 C8 11, 5 11, 1 8 C5 8, 5 5, 8 1Z" fill="currentColor"/></svg>
-            <span>Star 4</span>
           </button>
           <button class="pixel-type-btn" onclick="setPixelType('star8')" data-type="star8" title="Star 8">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8,1 L9.15,5.23 L12.95,3.05 L10.77,6.85 L15,8 L10.77,9.15 L12.95,12.95 L9.15,10.77 L8,15 L5.85,10.77 L3.05,12.95 L5.23,9.15 L1,8 L5.23,6.85 L3.05,3.05 L6.85,5.23 Z" fill="currentColor"/></svg>
-            <span>Star 8</span>
           </button>
           <button class="pixel-type-btn" onclick="setPixelType('ring')" data-type="ring" title="Ring">
             <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>
-            <span>Ring</span>
           </button>
         </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-label-row">
+          <div class="panel-label" style="margin-bottom:0">Layers</div>
+          <button class="add-layer-btn" onclick="addPixelLayer()">+</button>
+        </div>
+        <div id="pixel-layer-list"></div>
       </div>
 
       <div class="panel-section param-panel">
@@ -274,11 +320,6 @@
           <input type="range" id="psl-smooth" min="0" max="100" value="0" oninput="updatePixelParam('smooth',this.value)">
           <input type="number" class="slider-input" id="pv-smooth" value="0" onchange="updatePixelParam('smooth',this.value)">
         </div>
-        <div class="slider-row">
-          <span class="slider-name"><span class="ps">◉</span> Fusion</span>
-          <input type="range" id="psl-fusionStr" min="0" max="100" value="50" oninput="updatePixelParam('fusionStr',this.value)">
-          <input type="number" class="slider-input" id="pv-fusionStr" value="50" onchange="updatePixelParam('fusionStr',this.value)">
-        </div>
 
         <!-- ── TRANSFORM ── -->
         <div class="param-group-title">Transform</div>
@@ -313,27 +354,6 @@
 
       </div>
 
-      <div class="panel-section">
-        <div class="panel-label-row">
-          <div class="panel-label" style="margin-bottom:0">Layers</div>
-          <button class="add-layer-btn" onclick="addPixelLayer()">+</button>
-        </div>
-        <div id="pixel-layer-list"></div>
-      </div>
-
-      <div class="panel-section">
-        <div class="panel-label">Active Layer Style</div>
-        <div class="slider-row">
-          <span class="slider-name" style="width:auto;flex:1">Color</span>
-          <input type="color" id="pixel-color-picker" value="#d4f04a" oninput="updatePixelColor(this.value)"
-            style="width:32px;height:22px;border:1px solid var(--border2);border-radius:3px;background:transparent;cursor:pointer;padding:1px;">
-        </div>
-        <div class="slider-row">
-          <span class="slider-name">Grid</span>
-          <input type="range" id="psl-gridOpacity" min="0" max="100" value="100" oninput="updateGridOpacity(this.value)">
-          <span class="slider-val" id="pv-gridOpacity">100</span>
-        </div>
-      </div>
     </div>
 
   </div>
@@ -341,53 +361,28 @@
   <!-- CANVAS CENTER -->
   <div class="canvas-area">
 
-    <!-- FULL PREVIEW OVERLAY -->
-    <div id="preview-overlay" class="preview-overlay">
-      <div class="preview-topbar">
-        <textarea id="preview-large-input" class="preview-large-input"
-                  placeholder="Type text…" autocomplete="off" spellcheck="false" rows="1"
-                  oninput="renderLargePreview()"></textarea>
-        <div class="preview-topbar-sep"></div>
-        <span class="preview-size-label">Size</span>
-        <input type="range" id="preview-size-slider" class="preview-size-range" min="40" max="280" value="120"
-               oninput="renderLargePreview()">
-        <span class="preview-size-val" id="preview-size-val">120</span>
-        <div class="preview-topbar-sep"></div>
-        <span class="preview-size-label">Line H</span>
-        <input type="range" id="preview-lineh-slider" class="preview-size-range" min="80" max="300" value="130"
-               oninput="renderLargePreview()">
-        <span class="preview-size-val" id="preview-lineh-val">130</span>
-        <div class="preview-topbar-sep"></div>
-        <span class="preview-size-label">Letter</span>
-        <input type="range" id="preview-lspc-slider" class="preview-size-range" min="-20" max="100" value="0"
-               oninput="renderLargePreview()">
-        <span class="preview-size-val" id="preview-lspc-val">0</span>
-        <span class="preview-esc-hint">ESC</span>
-        <button class="preview-close-btn" onclick="togglePreview()">✕</button>
-      </div>
-      <div class="preview-stage">
-        <div class="preview-canvas-scroll" id="preview-canvas-scroll">
-          <canvas id="preview-large-canvas"></canvas>
-        </div>
-        <div id="preview-empty-hint" class="preview-empty-hint">Type text above to preview your font</div>
-      </div>
-    </div>
-
     <div class="canvas-wrapper" id="canvas-wrapper">
       <canvas id="grid-canvas"></canvas>
     </div>
     <div class="canvas-bottom">
       <div class="zoom-bar">
-        <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out (Ctrl −)">−</button>
+        <button class="zoom-btn" onclick="randomizeGlyph()"  style="font-family:'DM Mono',monospace;font-size:9px;width:auto;padding:0 7px;letter-spacing:0.06em;">Random</button>
+        <button class="zoom-btn" onclick="clearGlyph()"  style="font-family:'DM Mono',monospace;font-size:9px;width:auto;padding:0 7px;letter-spacing:0.06em;color:#e05252;">Clear</button>
+        <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
         <span class="zoom-display" id="zoom-display">100%</span>
-        <button class="zoom-btn" onclick="zoomIn()" title="Zoom In (Ctrl +)">+</button>
-        <button class="zoom-btn" onclick="resetZoom()" title="Reset Zoom (Ctrl 0)" style="font-family:'DM Mono',monospace;font-size:9px;width:auto;padding:0 7px;letter-spacing:0.06em;">100%</button>
+        <button class="zoom-btn" onclick="zoomOut()" data-tooltip="Zoom out (Ctrl −)">−</button>
+        <button class="zoom-btn" onclick="zoomIn()" data-tooltip="Zoom in (Ctrl +)">+</button>
         <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
-        <button id="btn-undo" class="zoom-btn" onclick="undo()" title="Undo (Ctrl Z)" style="font-size:14px;opacity:0.35;">↩</button>
-        <button id="btn-redo" class="zoom-btn" onclick="redo()" title="Redo (Ctrl Y)" style="font-size:14px;opacity:0.35;">↪</button>
+        <button class="zoom-btn" id="btn-grid-lines" onclick="toggleGrid()" data-tooltip="On/off" style="font-family:'DM Mono',monospace;font-size:9px;width:auto;padding:0 7px;letter-spacing:0.06em;">Grid</button>
+        <button class="zoom-btn" onclick="gridOpacityDown()" data-tooltip="Opacity −10%">−</button>
+        <button class="zoom-btn" onclick="gridOpacityUp()" data-tooltip="Opacity +10%">+</button>
         <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
-        <button class="zoom-btn theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Day / Night"></button>
-        <button class="zoom-btn help-btn" id="help-btn" onclick="toggleHelp()" title="Help & Shortcuts">?</button>
+        <button id="btn-undo" class="zoom-btn" onclick="undo()" data-tooltip="Undo (Ctrl Z)" style="font-size:14px;opacity:0.35;">↩</button>
+        <button id="btn-redo" class="zoom-btn" onclick="redo()" data-tooltip="Redo (Ctrl Y)" style="font-size:14px;opacity:0.35;">↪</button>
+        <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
+        <button class="zoom-btn theme-toggle" id="theme-toggle" onclick="toggleTheme()" data-tooltip="Light/Dark Mode"></button>
+        <button id="tour-trigger-btn" class="zoom-btn" onclick="startTour()" data-tooltip="Tutorial">◎</button>
+        <button class="zoom-btn help-btn" id="help-btn" onclick="toggleHelp()" data-tooltip="Help">?</button>
       </div>
     </div>
   </div>
@@ -419,8 +414,8 @@
     <input id="new-file-name" class="nf-input" type="text" placeholder="File name…" maxlength="40"
       onkeydown="if(event.key==='Enter')confirmNewFile()">
     <div class="nf-mode-row">
-      <button class="nf-mode-btn active" data-mode="grid" onclick="setNewFileMode('grid')">Grid</button>
-      <button class="nf-mode-btn" data-mode="pixel" onclick="setNewFileMode('pixel')">Pixel</button>
+      <button class="nf-mode-btn active" data-mode="pixel" onclick="setNewFileMode('pixel')">Pixel</button>
+      <button class="nf-mode-btn" data-mode="grid" onclick="setNewFileMode('grid')">Grid</button>
     </div>
     <div class="font-confirm-actions">
       <button class="font-confirm-cancel" onclick="closeNewFileModal()">Cancel</button>
@@ -562,19 +557,39 @@
 
 <!-- ── LANDING PAGE ── -->
 <div id="landing" class="landing">
-  <div class="landing-stage">
-    <div class="landing-logo">
-      <span class="logo-dot">dot</span><span class="logo-typo">typo</span>
+  <!-- Screen 1: hero (full viewport height) -->
+  <div class="landing-hero">
+    <!-- top-right auth buttons -->
+    <div class="landing-auth-corner">
+      <button class="btn" onclick="openAuthModal();switchAuthTab('register')">Sign up</button>
+      <button class="btn primary" onclick="openAuthModal();switchAuthTab('login')">Log in</button>
     </div>
-    <div class="landing-tagline">Design pixel fonts in your browser</div>
 
-    <!-- 4-step cards -->
+    <!-- center content -->
+    <div class="landing-logo-wrap">
+      <!-- fallback text, hidden once canvas is ready -->
+      <div class="landing-logo" id="logo-fallback">
+        <span class="logo-dot">dot</span><span class="logo-typo">typo</span>
+      </div>
+      <canvas id="logo-canvas" style="display:block;opacity:0;transition:opacity 0.5s;"></canvas>
+    </div>
+    <!-- bottom center CTA -->
+    <div class="landing-cta-bottom">
+      <button class="landing-enter" onclick="hideLanding()">starting</button>
+    </div>
+
+    <div class="landing-scroll-hint">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M4 9l4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+  </div>
+
+  <!-- Screen 2: how it works (scrolled into view) -->
+  <div class="landing-stage">
     <div class="landing-steps">
       <div class="landing-step">
         <div class="step-num">01</div>
         <div class="step-title">Choose a cell shape</div>
         <div class="step-desc">Pick square, circle, rounded, or diamond as your pixel building block</div>
-        <!-- anim: shapes cycling -->
         <div class="step-anim">
           <div class="sa-shapes" id="sa-shapes">
             <div class="sa-shape-opt sa-shape-sq"><div class="sa-shape-cell"></div></div>
@@ -588,14 +603,9 @@
       <div class="landing-step">
         <div class="step-num">02</div>
         <div class="step-title">Customise your grid</div>
-        <div class="step-desc">Set pixel size, shape, and dial in effects like Fusion, Skew, and Gap</div>
-        <!-- anim: sliders moving -->
+        <div class="step-desc">Set pixel size, shape, and dial in effects like Skew and Gap</div>
         <div class="step-anim">
           <div class="sa-sliders" id="sa-sliders">
-            <div class="sa-slider-row">
-              <span class="sa-slider-label">Fusion</span>
-              <div class="sa-track"><div class="sa-handle" id="sa-h0"></div></div>
-            </div>
             <div class="sa-slider-row">
               <span class="sa-slider-label">Skew</span>
               <div class="sa-track"><div class="sa-handle" id="sa-h1"></div></div>
@@ -612,7 +622,6 @@
         <div class="step-num">03</div>
         <div class="step-title">Draw each glyph</div>
         <div class="step-desc">Click cells to fill pixels, repeat for every character in your set</div>
-        <!-- anim: pixel grid drawing a letter -->
         <div class="step-anim">
           <div class="sa-pixgrid" id="sa-draw">
             <div class="sa-pix"></div><div class="sa-pix"></div><div class="sa-pix"></div><div class="sa-pix"></div><div class="sa-pix"></div>
@@ -628,7 +637,6 @@
         <div class="step-num">04</div>
         <div class="step-title">Preview live</div>
         <div class="step-desc">Type any text to instantly see your font rendered in real time</div>
-        <!-- anim: text string cycling in pixel-dot style -->
         <div class="step-anim">
           <div class="sa-preview" id="sa-preview">
             <div class="sa-preview-screen">
@@ -644,7 +652,6 @@
         <div class="step-num">05</div>
         <div class="step-title">Export your font</div>
         <div class="step-desc">Download as SVG, PNG, or a full OTF / TTF font file</div>
-        <!-- anim: format badges cycling with progress bar -->
         <div class="step-anim">
           <div class="sa-export" id="sa-export">
             <div class="sa-fmts">
@@ -657,19 +664,7 @@
         </div>
       </div>
     </div>
-
-    <div class="landing-cta">
-      <button class="landing-enter" onclick="hideLanding()">
-        Start designing
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-          <path d="M2 6.5h9M8 3l3.5 3.5L8 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-      <div class="landing-cta-auth">
-        <button class="btn" onclick="openAuthModal();switchAuthTab('register')">Sign up</button>
-        <button class="btn primary" onclick="openAuthModal();switchAuthTab('login')">Log in</button>
-      </div>
-    </div>
+  </div>
   </div>
 </div>
 
@@ -691,7 +686,6 @@
 
     <div class="help-section">
       <div class="help-section-title">Effects (Pixel mode)</div>
-      <div class="help-row"><span class="help-label">Fusion</span><span class="help-val">Merges nearby pixels into smooth blobs</span></div>
       <div class="help-row"><span class="help-label">Skew</span><span class="help-val">Slants the glyph horizontally</span></div>
       <div class="help-row"><span class="help-label">Gap</span><span class="help-val">Space between pixel cells</span></div>
       <div class="help-row"><span class="help-label">Stagger</span><span class="help-val">Offsets alternating rows</span></div>
@@ -701,11 +695,10 @@
     <div class="help-section">
       <div class="help-section-title">Keyboard Shortcuts</div>
       <div class="help-row"><kbd>Ctrl Z</kbd><span class="help-val">Undo</span></div>
-      <div class="help-row"><kbd>Ctrl Y</kbd><span class="help-val">Redo</span></div>
-      <div class="help-row"><kbd>Ctrl S</kbd><span class="help-val">Save current file</span></div>
-      <div class="help-row"><kbd>← →</kbd><span class="help-val">Previous / Next character</span></div>
-      <div class="help-row"><kbd>+ −</kbd><span class="help-val">Zoom in / out</span></div>
-      <div class="help-row"><kbd>0</kbd><span class="help-val">Reset zoom</span></div>
+      <div class="help-row"><kbd>Ctrl Shift Z</kbd><span class="help-val">Redo</span></div>
+      <div class="help-row"><kbd>Ctrl + / −</kbd><span class="help-val">Zoom in / out</span></div>
+      <div class="help-row"><kbd>Ctrl 0</kbd><span class="help-val">Reset zoom</span></div>
+      <div class="help-row"><kbd>Delete / Backspace</kbd><span class="help-val">Clear current glyph</span></div>
     </div>
 
     <div class="help-section">
@@ -718,6 +711,22 @@
   </div>
 </div>
 <div id="help-backdrop" class="help-backdrop" onclick="toggleHelp()"></div>
+
+<!-- ── TOUR COACHMARK ── -->
+<div id="tour-overlay" style="display:none">
+  <div id="tour-highlight"></div>
+  <div id="tour-card">
+    <div id="tour-step-num"></div>
+    <div id="tour-text"></div>
+    <div id="tour-actions">
+      <button id="tour-skip" onclick="closeTour()">Skip tour</button>
+      <button id="tour-next" onclick="tourNext()">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- hidden color picker for layer swatch clicks -->
+<input type="color" id="pixel-color-picker" value="#d4f04a" oninput="updatePixelColor(this.value)" style="display:none">
 
 <script type="module" src="/src/main.js"></script>
 </body>
