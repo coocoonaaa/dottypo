@@ -47,6 +47,8 @@ const CHARSET = [...CHARSET_LATIN, ...CHARSET_KOREAN]
 // ─────────────────────────────────────────────
 let currentMode = 'pixel'
 let currentCharIdx = 0
+let currentDocType = 'font'  // 'font' | 'lettering'
+const LETTERING_KEY = '__lettering__'
 let gridDocName = 'Untitled'
 let pixelDocName = 'Untitled'
 
@@ -562,7 +564,7 @@ function pixelRenderMainCanvas(hoveredCell) {
   const { rows, cols, smooth=0, skew=0, cellW=15, cellH=15 } = al
   const r2 = smooth / 100
   const skewFactor = skew / 100
-  const char = CHARSET[currentCharIdx]
+  const char = getCurrentCharKey()
   const { showGrid } = pixelState
 
   ctx.clearRect(0, 0, w, h)
@@ -886,7 +888,7 @@ function pixelGetLayerGlyph(layer, char) {
 }
 
 function pixelGetCurrentGlyph() {
-  return pixelGetLayerGlyph(pixelActiveLayer(), CHARSET[currentCharIdx])
+  return pixelGetLayerGlyph(pixelActiveLayer(), getCurrentCharKey())
 }
 
 function getActiveGlyph() {
@@ -916,7 +918,7 @@ function gridEnsureGlyphSize(oldCols = null) {
 }
 
 function pixelEnsureGlyphSize() {
-  const char = CHARSET[currentCharIdx]
+  const char = getCurrentCharKey()
   pixelState.layers.forEach(layer => {
     const g = layer.glyphs[char]; if (!g) return
     layer.glyphs[char] = Array.from({length: layer.rows ?? 24}, (_, r) =>
@@ -1003,6 +1005,18 @@ function resetZoom() {
 // ─────────────────────────────────────────────
 //  MODE SWITCH
 // ─────────────────────────────────────────────
+function getCurrentCharKey() {
+  return currentDocType === 'lettering' ? LETTERING_KEY : CHARSET[currentCharIdx]
+}
+
+function applyDocTypeUI() {
+  const isLettering = currentDocType === 'lettering'
+  document.body.classList.toggle('lettering-mode', isLettering)
+  // Disable font export button in lettering mode
+  const fontBtn = document.getElementById('btn-export-font')
+  if (fontBtn) { fontBtn.disabled = isLettering; fontBtn.style.opacity = isLettering ? '0.4' : ''; fontBtn.style.cursor = isLettering ? 'not-allowed' : '' }
+}
+
 function switchMode(mode) {
   currentMode = mode
   document.body.classList.toggle('pixel-mode', mode === 'pixel')
@@ -1282,7 +1296,7 @@ function toggleGrid() {
 }
 
 function clearGlyph() {
-  const char = CHARSET[currentCharIdx]
+  const char = currentMode==='grid' ? CHARSET[currentCharIdx] : getCurrentCharKey()
   if (currentMode==='grid') {
     gridGlyphs()[char] = Array.from({length:state.rows},()=>new Array(getGridActualCols()).fill(false))
   } else {
@@ -1293,7 +1307,7 @@ function clearGlyph() {
 }
 
 function randomizeGlyph() {
-  const char = CHARSET[currentCharIdx]
+  const char = currentMode==='grid' ? CHARSET[currentCharIdx] : getCurrentCharKey()
   const threshold = currentMode==='grid' ? 0.55 : 0.65
   if (currentMode==='grid') {
     gridGlyphs()[char] = Array.from({length:state.rows},()=>Array.from({length:getGridActualCols()},()=>Math.random()>threshold))
@@ -1665,7 +1679,9 @@ function buildSVGPaths(glyph, opts) {
       paths.push(`<polygon points="${cx2},${y} ${x+CS_W},${cy2} ${cx2},${y+CS_H} ${x},${cy2}" fill="${cellColor}"/>`)
     } else if (type==='ring') {
       const hs=0.65-r2*0.45
-      paths.push(`<path fill-rule="evenodd" fill="${cellColor}" d="M${cx2},${y}a${CS_W/2},${CS_H/2} 0 1,0 .001,0ZM${cx2},${cy2-CS_H/2*hs}a${CS_W/2*hs},${CS_H/2*hs} 0 1,1 .001,0Z"/>`)
+      const rx=CS_W/2,ry=CS_H/2,rxi=CS_W/2*hs,ryi=CS_H/2*hs
+      const it=cy2-CS_H/2*hs,ib=cy2+CS_H/2*hs
+      paths.push(`<path fill-rule="nonzero" fill="${cellColor}" d="M${cx2},${y} A${rx},${ry} 0 0,1 ${cx2},${y+CS_H} A${rx},${ry} 0 0,1 ${cx2},${y} Z M${cx2},${it} A${rxi},${ryi} 0 0,0 ${cx2},${ib} A${rxi},${ryi} 0 0,0 ${cx2},${it} Z"/>`)
     } else if (type==='star8') {
       const pts=[], ix=CS_W*(0.2+r2*0.2), iy=CS_H*(0.2+r2*0.2)
       for(let i=0;i<16;i++){const a=i*Math.PI/8-Math.PI/2,outer=i%2===0;pts.push(`${cx2+Math.cos(a)*(outer?CS_W/2:ix)},${cy2+Math.sin(a)*(outer?CS_H/2:iy)}`)}
@@ -1713,7 +1729,15 @@ function cellShapeSVGStr(w, h, r2, type) {
     }
     case 'ring': {
       const hs = 0.65 - r2*0.45
-      return `<path fill-rule="evenodd" d="M${cx},0 a${n(w/2)},${n(h/2)} 0 1,0 .001,0 Z M${cx},${n(cy-h/2*hs)} a${n(w/2*hs)},${n(h/2*hs)} 0 1,1 .001,0 Z"/>`
+      const rx = n(w/2), ry = n(h/2)
+      const rxi = n(w/2*hs), ryi = n(h/2*hs)
+      const it = n(cy - h/2*hs), ib = n(cy + h/2*hs)
+      // outer clockwise, inner counter-clockwise → nonzero fills ring correctly
+      return `<path fill-rule="nonzero" d="M${cx},0 A${rx},${ry} 0 0,1 ${cx},${n(h)} A${rx},${ry} 0 0,1 ${cx},0 Z M${cx},${it} A${rxi},${ryi} 0 0,0 ${cx},${ib} A${rxi},${ryi} 0 0,0 ${cx},${it} Z"/>`
+    }
+    case 'heart': {
+      const top = n(h*0.28)
+      return `<path d="M${cx},${top} C${cx},${n(h*0.06)} ${n(w)},${n(h*0.06)} ${n(w)},${n(h*0.36)} C${n(w)},${n(h*0.64)} ${cx},${n(h*0.82)} ${cx},${n(h)} C${cx},${n(h*0.82)} 0,${n(h*0.64)} 0,${n(h*0.36)} C0,${n(h*0.06)} ${cx},${n(h*0.06)} ${cx},${top} Z"/>`
     }
     default: // rect
       return `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" rx="${n(r2*Math.min(w,h)*0.5)}"/>`
@@ -1779,7 +1803,7 @@ function downloadSVG() {
     URL.revokeObjectURL(url); setStatus('SVG exported: preview')
     return
   }
-  const char = CHARSET[currentCharIdx]
+  const char = currentMode === 'grid' ? CHARSET[currentCharIdx] : getCurrentCharKey()
   let svgContent
   if (currentMode === 'grid') {
     const glyph = gridGlyphs()[char]
@@ -1794,8 +1818,9 @@ function downloadSVG() {
   }
   const blob=new Blob([svgContent],{type:'image/svg+xml'})
   const url=URL.createObjectURL(blob)
-  const a=document.createElement('a'); a.href=url; a.download=`${getCurrentDocName()}-${char==='/'?'slash':char}.svg`; a.click()
-  URL.revokeObjectURL(url); setStatus('SVG exported: '+char)
+  const svgSlug = char === '/' ? 'slash' : char === LETTERING_KEY ? getCurrentDocName() : char
+  const a=document.createElement('a'); a.href=url; a.download=`${getCurrentDocName()}-${svgSlug}.svg`; a.click()
+  URL.revokeObjectURL(url); setStatus('SVG exported')
 }
 
 function downloadPNG() {
@@ -1814,8 +1839,8 @@ function downloadPNG() {
     }, 'image/png')
     return
   }
-  const char = CHARSET[currentCharIdx]
-  const fname = `${getCurrentDocName()}-${char === '/' ? 'slash' : char}.png`
+  const char = currentMode === 'grid' ? CHARSET[currentCharIdx] : getCurrentCharKey()
+  const fname = `${getCurrentDocName()}-${char === '/' || char === LETTERING_KEY ? getCurrentDocName() : char}.png`
   const triggerBlob = (cvs) => {
     cvs.toBlob(blob => {
       if (!blob) { setStatus('PNG export failed'); return }
@@ -2504,9 +2529,11 @@ async function signOut() {
   currentUser = null
   currentProfile = null
   currentCloudDocId = null
+  currentDocType = 'font'
   GRID_TYPES.forEach(t => { state.glyphsByType[t] = makeGlyphStore() })
   pixelState.layers = [makePixelLayer()]
   pixelState.activeLayerIdx = 0
+  applyDocTypeUI()
   setCurrentDocName('Untitled')
   updateDocHeader()
   resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview()
@@ -2571,6 +2598,7 @@ function cloudDocPayload(name) {
       : { showGrid: pixelState.showGrid, gridOpacity: pixelState.gridOpacity,
           layers: JSON.parse(JSON.stringify(pixelState.layers)),
           activeLayerIdx: pixelState.activeLayerIdx,
+          doc_type: currentDocType,
           previewText: document.getElementById('preview-large-input')?.value || '' },
     glyphs: isGrid ? JSON.parse(JSON.stringify(state.glyphsByType)) : null,
     updated_at: new Date().toISOString()
@@ -2602,7 +2630,7 @@ async function cloudDelete(id) {
 
 async function cloudFetchList() {
   if (!currentUser) return []
-  const { data } = await supabase.from('documents').select('id,name,mode,updated_at')
+  const { data } = await supabase.from('documents').select('id,name,mode,config,updated_at')
     .order('updated_at', { ascending: false })
   return data || []
 }
@@ -2627,6 +2655,7 @@ async function docsLoadCloud(id) {
   const doc = await cloudLoad(id)
   if (!doc) return setStatus('Failed to load document')
   currentCloudDocId = doc.id
+  currentDocType = doc.config?.doc_type === 'lettering' ? 'lettering' : 'font'
   if (doc.mode !== currentMode) switchMode(doc.mode)
   if (doc.mode === 'grid') {
     Object.assign(state, doc.config)
@@ -2639,6 +2668,7 @@ async function docsLoadCloud(id) {
     pixelSyncSliders()
   }
   currentCharIdx = 0
+  applyDocTypeUI()
   resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview(); resetZoom()
   updateActiveCharCell()
   setCurrentDocName(doc.name); updateDocHeader()
@@ -2703,7 +2733,7 @@ async function renderDocListCloud() {
     <div class="doc-item${d.id === currentCloudDocId ? ' active' : ''}" data-id="${d.id}">
       <div class="doc-info" onclick="docsLoadCloud('${d.id}')">
         <div class="doc-name">${d.name}</div>
-        <div class="doc-meta"><span class="doc-mode-tag">${d.mode.toUpperCase()}</span>${new Date(d.updated_at).toLocaleString()}</div>
+        <div class="doc-meta"><span class="doc-mode-tag">${d.config?.doc_type === 'lettering' ? 'LETTERING' : d.mode.toUpperCase()}</span>${new Date(d.updated_at).toLocaleString()}</div>
       </div>
       <div class="doc-actions">
         <button class="doc-action-btn" onclick="event.stopPropagation();docsRenameCloud('${d.id}','${d.name.replace(/'/g,"\\'")}' )" title="Rename">✎</button>
@@ -2731,12 +2761,18 @@ function patchedRenderDocList() {
 }
 
 let _newFilePendingMode = 'grid'
+let _newFilePendingType = 'font'
 
 function openNewFileModal() {
   if (!currentUser) { openAuthModal(); return }
   _newFilePendingMode = currentMode
+  _newFilePendingType = 'font'
   document.querySelectorAll('.nf-mode-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === _newFilePendingMode))
+  document.getElementById('nf-type-font')?.classList.add('active')
+  document.getElementById('nf-type-lettering')?.classList.remove('active')
+  const gridBtn = document.querySelector('.nf-mode-btn[data-mode="grid"]')
+  if (gridBtn) { gridBtn.disabled = false; gridBtn.style.opacity = ''; gridBtn.style.cursor = '' }
   document.getElementById('new-file-name').value = ''
   document.getElementById('new-file-modal').style.display = 'flex'
   setTimeout(() => document.getElementById('new-file-name').focus(), 50)
@@ -2752,6 +2788,25 @@ function setNewFileMode(mode) {
     b.classList.toggle('active', b.dataset.mode === mode))
 }
 
+function setNewFileType(type) {
+  _newFilePendingType = type
+  const fontBtn = document.getElementById('nf-type-font')
+  const letBtn  = document.getElementById('nf-type-lettering')
+  if (fontBtn)  { fontBtn.classList[type === 'font' ? 'add' : 'remove']('active') }
+  if (letBtn)   { letBtn.classList[type === 'lettering' ? 'add' : 'remove']('active') }
+  const gridBtn = document.querySelector('.nf-mode-btn[data-mode="grid"]')
+  if (gridBtn) {
+    gridBtn.disabled = type === 'lettering'
+    gridBtn.style.opacity = type === 'lettering' ? '0.35' : ''
+    gridBtn.style.cursor = type === 'lettering' ? 'not-allowed' : ''
+  }
+  if (type === 'lettering') {
+    _newFilePendingMode = 'pixel'
+    document.querySelectorAll('#nf-mode-section .nf-mode-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.mode === 'pixel'))
+  }
+}
+
 async function confirmNewFile() {
   const name = document.getElementById('new-file-name').value.trim() || 'Untitled'
   closeNewFileModal()
@@ -2761,6 +2816,7 @@ async function confirmNewFile() {
     if (existing.length >= 5) { openSubscriptionModal(); setStatus('Free plan: 5 file limit reached'); return }
   }
   if (_newFilePendingMode !== currentMode) switchMode(_newFilePendingMode)
+  currentDocType = _newFilePendingType
   currentCloudDocId = null
   if (_newFilePendingMode === 'pixel') {
     pixelState.layers = [makePixelLayer()]
@@ -2770,6 +2826,7 @@ async function confirmNewFile() {
     GRID_TYPES.forEach(t => { state.glyphsByType[t] = makeGlyphStore() })
   }
   currentCharIdx = 0
+  applyDocTypeUI()
   updateActiveCharCell()
   resizeCanvas(); renderMainCanvas(null); renderAllThumbnails(); renderPreview(); resetZoom()
   docsSaveCloud(name)
@@ -3467,7 +3524,7 @@ Object.assign(window, {
   docsDeleteCloud, docsLoadCloud,
   docsRename, docsRenameCloud, saveNewDoc: saveNewDocPatched,
   createNewDoc, saveCurrentDoc,
-  openNewFileModal, closeNewFileModal, setNewFileMode, confirmNewFile,
+  openNewFileModal, closeNewFileModal, setNewFileMode, setNewFileType, confirmNewFile,
   hideLanding, showLanding, toggleHelp,
   startTour, closeTour, tourNext,
   openAuthModal, closeAuthModal, switchAuthTab, handleAuthSubmit, signIn, signUp, signOut, toggleUserDropdown,

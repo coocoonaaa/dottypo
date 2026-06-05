@@ -32,7 +32,7 @@
     <div id="export-btns" style="display:flex;align-items:center;gap:6px;">
       <button class="btn" onclick="downloadSVG()">SVG</button>
       <button class="btn" onclick="downloadPNG()">PNG</button>
-      <button class="btn" onclick="openFontExportModal()">Font ↓</button>
+      <button class="btn" id="btn-export-font" onclick="openFontExportModal()">Font ↓</button>
     </div>
 
     <div style="width:1px;height:18px;background:var(--border);"></div>
@@ -264,6 +264,9 @@
           <button class="pixel-type-btn" onclick="setPixelType('ring')" data-type="ring" title="Ring">
             <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>
           </button>
+          <button class="pixel-type-btn" onclick="setPixelType('heart')" data-type="heart" title="Heart">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8,4.48 C8,0.96 16,0.96 16,5.76 C16,10.24 8,16 8,16 C8,16 0,10.24 0,5.76 C0,0.96 8,0.96 8,4.48 Z" fill="currentColor"/></svg>
+          </button>
         </div>
       </div>
 
@@ -281,12 +284,12 @@
         <div class="param-group-title">Pixel Setting</div>
         <div class="slider-row">
           <span class="slider-name"><span class="ps">☰</span> Rows</span>
-          <input type="range" id="psl-rows" min="5" max="50" value="24" oninput="updatePixelParam('rows',this.value)">
+          <input type="range" id="psl-rows" min="5" max="100" value="24" oninput="updatePixelParam('rows',this.value)">
           <input type="number" class="slider-input" id="pv-rows" value="24" onchange="updatePixelParam('rows',this.value)">
         </div>
         <div class="slider-row">
           <span class="slider-name"><span class="ps">⋮</span> Columns</span>
-          <input type="range" id="psl-cols" min="5" max="50" value="16" oninput="updatePixelParam('cols',this.value)">
+          <input type="range" id="psl-cols" min="5" max="100" value="16" oninput="updatePixelParam('cols',this.value)">
           <input type="number" class="slider-input" id="pv-cols" value="16" onchange="updatePixelParam('cols',this.value)">
         </div>
         <div class="slider-row">
@@ -413,9 +416,17 @@
     <div class="font-confirm-title">New File</div>
     <input id="new-file-name" class="nf-input" type="text" placeholder="File name…" maxlength="40"
       onkeydown="if(event.key==='Enter')confirmNewFile()">
-    <div class="nf-mode-row">
-      <button class="nf-mode-btn active" data-mode="pixel" onclick="setNewFileMode('pixel')">Pixel</button>
-      <button class="nf-mode-btn" data-mode="grid" onclick="setNewFileMode('grid')">Grid</button>
+    <div class="nf-section-label">Type</div>
+    <div class="nf-type-row">
+      <button class="nf-mode-btn active" id="nf-type-font" onclick="setNewFileType('font')">Font Design</button>
+      <button class="nf-mode-btn" id="nf-type-lettering" onclick="setNewFileType('lettering')">Lettering</button>
+    </div>
+    <div id="nf-mode-section">
+      <div class="nf-section-label">Mode</div>
+      <div class="nf-mode-row">
+        <button class="nf-mode-btn active" data-mode="pixel" onclick="setNewFileMode('pixel')">Pixel</button>
+        <button class="nf-mode-btn" data-mode="grid" onclick="setNewFileMode('grid')">Grid</button>
+      </div>
     </div>
     <div class="font-confirm-actions">
       <button class="font-confirm-cancel" onclick="closeNewFileModal()">Cancel</button>

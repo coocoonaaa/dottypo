@@ -1661,3 +1661,10 @@ kbd {
 }
 #tour-next:hover { opacity: 0.85; }
 #tour-trigger-btn.tour-active { color: var(--accent); }
+
+/* ── Lettering mode ── */
+.lettering-mode .right-panel { display: none; }
+
+/* New file modal — type row */
+.nf-section-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; letter-spacing: 0.04em; text-transform: uppercase; }
+.nf-type-row { display: flex; gap: 8px; margin-bottom: 14px; }
