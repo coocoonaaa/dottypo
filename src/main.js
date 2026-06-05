@@ -49,6 +49,13 @@ let currentMode = 'pixel'
 let currentCharIdx = 0
 let currentDocType = 'font'  // 'font' | 'lettering'
 const LETTERING_KEY = '__lettering__'
+
+// ── Guide lines ──
+let guideState = {
+  enabled: false,
+  hLines: [50],
+  vLines: [50]
+}
 let gridDocName = 'Untitled'
 let pixelDocName = 'Untitled'
 
@@ -526,6 +533,24 @@ function shapePath(ctx2, w, h, r2, type2) {
 // ─────────────────────────────────────────────
 //  GRID RENDERING
 // ─────────────────────────────────────────────
+function renderGuides() {
+  if (!guideState.enabled) return
+  const { w, h } = currentMode === 'grid' ? gridGetCanvasSize() : pixelGetCanvasSize()
+  ctx.save()
+  ctx.strokeStyle = 'rgba(80, 160, 255, 0.85)'
+  ctx.lineWidth = 1
+  ctx.setLineDash([])
+  guideState.hLines.forEach(p => {
+    const y = Math.round(p / 100 * h) + 0.5
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+  })
+  guideState.vLines.forEach(p => {
+    const x = Math.round(p / 100 * w) + 0.5
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
+  })
+  ctx.restore()
+}
+
 function gridRenderMainCanvas(hoveredCell) {
   const { cellColor, showGrid } = state
   const { w, h } = gridGetCanvasSize()
@@ -553,6 +578,7 @@ function gridRenderMainCanvas(hoveredCell) {
     }
   }
   ctx.restore()
+  renderGuides()
 }
 
 // ─────────────────────────────────────────────
@@ -631,6 +657,7 @@ function pixelRenderMainCanvas(hoveredCell) {
       ctx.restore()
     }
   }
+  renderGuides()
 }
 
 
@@ -1293,6 +1320,79 @@ function toggleGrid() {
   if (currentMode==='grid') state.showGrid=!state.showGrid
   else pixelState.showGrid=!pixelState.showGrid
   renderMainCanvas(hoveredCell)
+}
+
+// ── Guide line controls ──
+let _guidePanelOpen = false
+function toggleGuidePanel() {
+  _guidePanelOpen = !_guidePanelOpen
+  document.getElementById('btn-guide')?.classList.toggle('active', _guidePanelOpen)
+  const panel = document.getElementById('guide-panel')
+  if (panel) panel.style.display = _guidePanelOpen ? 'block' : 'none'
+  if (_guidePanelOpen) renderGuidePanel()
+}
+
+function closeGuidePanel() {
+  if (!_guidePanelOpen) return
+  _guidePanelOpen = false
+  document.getElementById('btn-guide')?.classList.remove('active')
+  const panel = document.getElementById('guide-panel')
+  if (panel) panel.style.display = 'none'
+}
+
+document.addEventListener('mousedown', e => {
+  if (!_guidePanelOpen) return
+  const panel = document.getElementById('guide-panel')
+  const btn = document.getElementById('btn-guide')
+  if (panel && !panel.contains(e.target) && btn && !btn.contains(e.target)) closeGuidePanel()
+})
+
+function toggleGuideLines() {
+  guideState.enabled = !guideState.enabled
+  const sw = document.getElementById('guide-visible-toggle')
+  if (sw) { sw.classList.toggle('active', guideState.enabled); sw.textContent = guideState.enabled ? 'ON' : 'OFF' }
+  renderMainCanvas(hoveredCell)
+}
+
+function addGuideLine(axis) {
+  const arr = axis === 'h' ? guideState.hLines : guideState.vLines
+  if (arr.length >= 10) return
+  arr.push(50)
+  renderGuidePanel(); renderMainCanvas(hoveredCell)
+}
+
+function removeGuideLine(axis, idx) {
+  const arr = axis === 'h' ? guideState.hLines : guideState.vLines
+  arr.splice(idx, 1)
+  renderGuidePanel(); renderMainCanvas(hoveredCell)
+}
+
+function updateGuideLine(axis, idx, val) {
+  val = Math.max(0, Math.min(100, parseInt(val) || 0))
+  const arr = axis === 'h' ? guideState.hLines : guideState.vLines
+  arr[idx] = val
+  const el = document.getElementById(`guide-${axis}-val-${idx}`)
+  if (el) el.textContent = val + '%'
+  renderMainCanvas(hoveredCell)
+}
+
+function renderGuidePanel() {
+  const sw = document.getElementById('guide-visible-toggle')
+  if (sw) sw.classList.toggle('active', guideState.enabled)
+  const hList = document.getElementById('guide-h-list')
+  const vList = document.getElementById('guide-v-list')
+  if (!hList || !vList) return
+  const row = (axis, idx, val) => `
+    <div class="guide-row">
+      <input type="range" class="guide-slider" min="0" max="100" value="${val}"
+        oninput="updateGuideLine('${axis}',${idx},this.value)">
+      <span class="guide-val" id="guide-${axis}-val-${idx}">${val}%</span>
+      <button class="guide-del" onclick="removeGuideLine('${axis}',${idx})">✕</button>
+    </div>`
+  hList.innerHTML = guideState.hLines.map((v, i) => row('h', i, v)).join('') ||
+    `<div class="guide-empty">No lines</div>`
+  vList.innerHTML = guideState.vLines.map((v, i) => row('v', i, v)).join('') ||
+    `<div class="guide-empty">No lines</div>`
 }
 
 function clearGlyph() {
@@ -3524,6 +3624,7 @@ Object.assign(window, {
   docsDeleteCloud, docsLoadCloud,
   docsRename, docsRenameCloud, saveNewDoc: saveNewDocPatched,
   createNewDoc, saveCurrentDoc,
+  toggleGuidePanel, toggleGuideLines, addGuideLine, removeGuideLine, updateGuideLine,
   openNewFileModal, closeNewFileModal, setNewFileMode, setNewFileType, confirmNewFile,
   hideLanding, showLanding, toggleHelp,
   startTour, closeTour, tourNext,

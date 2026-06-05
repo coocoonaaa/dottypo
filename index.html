@@ -380,6 +380,8 @@
         <button class="zoom-btn" onclick="gridOpacityDown()" data-tooltip="Opacity −10%">−</button>
         <button class="zoom-btn" onclick="gridOpacityUp()" data-tooltip="Opacity +10%">+</button>
         <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
+        <button id="btn-guide" class="zoom-btn" onclick="toggleGuidePanel()" data-tooltip="Guide lines" style="font-family:'DM Mono',monospace;font-size:9px;width:auto;padding:0 7px;letter-spacing:0.06em;">Guide</button>
+        <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
         <button id="btn-undo" class="zoom-btn" onclick="undo()" data-tooltip="Undo (Ctrl Z)" style="font-size:14px;opacity:0.35;">↩</button>
         <button id="btn-redo" class="zoom-btn" onclick="redo()" data-tooltip="Redo (Ctrl Y)" style="font-size:14px;opacity:0.35;">↪</button>
         <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;"></div>
@@ -387,6 +389,27 @@
         <button id="tour-trigger-btn" class="zoom-btn" onclick="startTour()" data-tooltip="Tutorial">◎</button>
         <button class="zoom-btn help-btn" id="help-btn" onclick="toggleHelp()" data-tooltip="Help">?</button>
       </div>
+    </div>
+  </div>
+
+  <!-- GUIDE PANEL -->
+  <div id="guide-panel" class="guide-panel" style="display:none">
+    <div class="guide-visible-row">
+      <button id="guide-visible-toggle" class="guide-toggle-btn" onclick="toggleGuideLines()">OFF</button>
+    </div>
+    <div class="guide-panel-section">
+      <div class="guide-panel-header">
+        <span>HORIZONTAL</span>
+        <button class="guide-add-btn" onclick="addGuideLine('h')">+ Add</button>
+      </div>
+      <div id="guide-h-list" class="guide-list"></div>
+    </div>
+    <div class="guide-panel-section">
+      <div class="guide-panel-header">
+        <span>VERTICAL</span>
+        <button class="guide-add-btn" onclick="addGuideLine('v')">+ Add</button>
+      </div>
+      <div id="guide-v-list" class="guide-list"></div>
     </div>
   </div>
 
