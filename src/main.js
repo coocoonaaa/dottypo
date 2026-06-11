@@ -1888,15 +1888,102 @@ function buildPixelModeSVG(char) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n${defsStr}${groups.join('\n')}\n</svg>`
 }
 
+// Build a vector SVG for the current preview text (pixel mode only).
+// Replicates the exact layout of renderLargePreviewPixel but outputs <path> elements.
+function buildPreviewSVG() {
+  if (currentMode !== 'pixel') return null
+  const text = document.getElementById('preview-large-input')?.value || ''
+  if (!text) return null
+  const targetH  = parseInt(document.getElementById('preview-size-slider')?.value  || 120)
+  const lineHPct = parseInt(document.getElementById('preview-lineh-slider')?.value || 130)
+  const lspc     = parseInt(document.getElementById('preview-lspc-slider')?.value  || 0)
+
+  const al = pixelActiveLayer()
+  const fullCssH  = al ? (al.rows * (al.cellH ?? 15)) : 100
+  const blankCssW = al ? (al.cols * (al.cellW ?? 15)) : 60
+  const cssScale  = targetH / fullCssH
+  const extra     = (lspc / 100) * targetH
+  const lineH     = targetH * (lineHPct / 100)
+  const lines     = text.split('\n')
+
+  // Pre-compute bounding box for each unique character
+  const uniqueChars = [...new Set(text.replace(/\n/g, ''))]
+  const charBBox = new Map()
+  for (const ch of uniqueChars) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const layer of pixelState.layers) {
+      if (layer.visible === false) continue
+      const g = layer.glyphs[ch]; if (!g) continue
+      const { rows: lr, cols: lc, cellW: lw = 15, cellH: lh = 15 } = layer
+      for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
+        if (!g[r]?.[c]) continue
+        const { x, y } = layerGetCellPos(layer, c, r)
+        minX = Math.min(minX, x); minY = Math.min(minY, y)
+        maxX = Math.max(maxX, x + lw); maxY = Math.max(maxY, y + lh)
+      }
+    }
+    if (isFinite(minX)) charBBox.set(ch, { minX, minY, cssW: maxX - minX, cssH: maxY - minY })
+  }
+
+  // Line widths for alignment
+  const lineWidths = lines.map(line =>
+    [...line].reduce((s, ch, i) => {
+      const bb = charBBox.get(ch)
+      return s + (bb ? bb.cssW * cssScale : blankCssW * cssScale) + (i > 0 ? extra : 0)
+    }, 0))
+  const totalW = Math.max(4, ...lineWidths)
+  const totalH = lines.length === 1 ? targetH : (lines.length - 1) * lineH + targetH
+
+  const svgParts = []
+
+  lines.forEach((line, li) => {
+    if (!line) return
+    const yOff = li * lineH
+    const lineW = lineWidths[li]
+    let x = previewAlign === 'right'  ? totalW - lineW
+           : previewAlign === 'center' ? (totalW - lineW) / 2
+           : 0
+
+    ;[...line].forEach((ch, ci) => {
+      const bb = charBBox.get(ch)
+      if (!bb) { x += blankCssW * cssScale; if (ci < line.length - 1) x += extra; return }
+
+      const charX = x
+      ;[...pixelState.layers].reverse().forEach(layer => {
+        if (layer.visible === false) return
+        const g = layer.glyphs[ch]; if (!g) return
+        if (!g.some(row => row?.some(v => v))) return
+        const { rows: lr, cols: lc, cellW: lw = 15, cellH: lh = 15,
+                smooth: ls = 0, skew: lsk = 0, shape, color, opacity } = layer
+        const r2 = ls / 100, skewF = lsk / 100
+        const cells = []
+        for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
+          if (!g[r]?.[c]) continue
+          const { x: cx, y: cy } = layerGetCellPos(layer, c, r)
+          const tx = +((cx - bb.minX) * cssScale + charX).toFixed(3)
+          const ty = +(cy * cssScale + yOff).toFixed(3)
+          const tfm = skewF !== 0
+            ? `translate(${tx},${ty}) scale(${cssScale.toFixed(6)}) matrix(1,0,${skewF.toFixed(4)},1,0,0)`
+            : `translate(${tx},${ty}) scale(${cssScale.toFixed(6)})`
+          cells.push(`<g transform="${tfm}">${cellShapeSVGStr(lw, lh, r2, shape)}</g>`)
+        }
+        if (cells.length) svgParts.push(`<g fill="${color}" opacity="${opacity}">\n${cells.join('\n')}\n</g>`)
+      })
+
+      x += bb.cssW * cssScale
+      if (ci < line.length - 1) x += extra
+    })
+  })
+
+  const W = Math.ceil(totalW), H = Math.ceil(totalH)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n${svgParts.join('\n')}\n</svg>`
+}
+
 function downloadSVG() {
-  // Preview mode: embed the preview canvas as an SVG <image>
+  // Preview mode: generate vector SVG directly from pixel cells
   if (previewOpen) {
-    const pc = document.getElementById('preview-large-canvas')
-    if (!pc || pc.width === 0 || pc.height === 0) { setStatus('Nothing to export'); return }
-    const cssW = parseFloat(pc.style.width) || pc.width
-    const cssH = parseFloat(pc.style.height) || pc.height
-    const dataURL = pc.toDataURL('image/png')
-    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${cssW}" height="${cssH}" viewBox="0 0 ${cssW} ${cssH}">\n<image width="${cssW}" height="${cssH}" xlink:href="${dataURL}"/>\n</svg>`
+    const svgContent = buildPreviewSVG()
+    if (!svgContent) { setStatus('Nothing to export'); return }
     const blob = new Blob([svgContent], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = `${getCurrentDocName()}-preview.svg`; a.click()
@@ -2103,7 +2190,7 @@ function _fontRenderChar(char, RS) {
     }
     ctx.restore()
   }
-  return { canvas: cvs, cssW, cssH, RS }
+  return { canvas: cvs, cssW, cssH, RS, minY: minY - PIXEL_PAD }
 }
 
 // Marching squares: extract closed contour segments from an alpha-channel binary grid.
@@ -2178,7 +2265,8 @@ function _stitchContours(segs) {
 
 // Trace the rendered canvas and add contour polylines to an opentype Path.
 // fontScale: CSS pixels → font units; ASC: ascender in font units.
-function _addCanvasContours(path, renderResult, fontScale, ASC) {
+// originY: CSS y-offset of the bounding box from the grid top (to preserve vertical position).
+function _addCanvasContours(path, renderResult, fontScale, ASC, originY = 0) {
   const {canvas, cssW, cssH, RS} = renderResult
   const PW=canvas.width, PH=canvas.height
   const imd = canvas.getContext('2d').getImageData(0,0,PW,PH)
@@ -2186,17 +2274,141 @@ function _addCanvasContours(path, renderResult, fontScale, ASC) {
   const stride = Math.max(1, Math.round(RS/3))
   const segs = _marchSquares(imd.data, PW, PH, stride, 128)
   const contours = _stitchContours(segs)
+  // Marching squares produces CCW contours in canvas space (Y-down).
+  // After Y-flip to font space (Y-up), CCW → CW which OTF treats as holes.
+  // Reversing makes them CW in canvas → CCW in font → correct outer contours.
+  // Hole contours (e.g. inside 'O') come out CW in canvas → CCW in font after
+  // reversal → correctly treated as holes by the non-zero winding rule.
+  for (const pts of contours) pts.reverse()
   for (const pts of contours) {
     if (pts.length<3) continue
-    // Convert grid coords (gx,gy) → font coords (Y-up)
+    // Convert grid coords (gx,gy) → font coords (Y-up), offsetting by originY so
+    // vertical position within the grid is preserved regardless of bounding-box trimming.
     const toFont = ([gx,gy]) => [
       (gx*stride/RS) * fontScale,
-      ASC - (gy*stride/RS) * fontScale
+      ASC - ((gy*stride/RS) + originY) * fontScale
     ]
     const [x0,y0]=toFont(pts[0])
     path.moveTo(x0,y0)
     for (let i=1;i<pts.length;i++) { const [x,y]=toFont(pts[i]); path.lineTo(x,y) }
     path.close()
+  }
+}
+
+// Direct per-cell font path generation — no canvas tracing needed.
+// Each filled pixel cell is added as its own shape path directly in font coordinates.
+// CW on screen (canvas Y-down) = CCW in font Y-up = correct outer contour for OTF.
+function _cellToFontPath(path, cx, cy, w, h, r2, sk, shape, fs, ASC) {
+  // fp: local canvas coords within cell → font coords
+  const fp = (lx, ly) => [(cx + lx + sk * ly) * fs, ASC - (cy + ly) * fs]
+  const rr = r2 * Math.min(w, h) * 0.5  // corner radius in CSS px
+  const K = 0.5523  // bezier constant for circular arc approximation
+
+  // Add a polygon (canvas coords) ensuring CW on screen for outer contours
+  const addPoly = (pts, hole = false) => {
+    let area = 0
+    for (let i = 0; i < pts.length; i++) {
+      const [x1,y1] = pts[i], [x2,y2] = pts[(i+1) % pts.length]
+      area += x1 * y2 - x2 * y1
+    }
+    // area > 0 → CW on screen; < 0 → CCW on screen
+    const ordered = hole ? (area > 0 ? [...pts].reverse() : pts)
+                         : (area < 0 ? [...pts].reverse() : pts)
+    path.moveTo(...fp(...ordered[0]))
+    for (let i = 1; i < ordered.length; i++) path.lineTo(...fp(...ordered[i]))
+    path.close()
+  }
+
+  switch (shape ?? 'rect') {
+    case 'rect': {
+      if (rr < 0.5) {
+        addPoly([[0,0],[w,0],[w,h],[0,h]])
+      } else {
+        // Rounded rect, CW on screen: start top-left, go right
+        path.moveTo(...fp(rr, 0))
+        path.lineTo(...fp(w-rr, 0))
+        path.curveTo(...fp(w-rr+rr*K,0), ...fp(w,rr-rr*K), ...fp(w,rr))       // TR corner
+        path.lineTo(...fp(w, h-rr))
+        path.curveTo(...fp(w,h-rr+rr*K), ...fp(w-rr+rr*K,h), ...fp(w-rr,h))   // BR corner
+        path.lineTo(...fp(rr, h))
+        path.curveTo(...fp(rr-rr*K,h), ...fp(0,h-rr+rr*K), ...fp(0,h-rr))     // BL corner
+        path.lineTo(...fp(0, rr))
+        path.curveTo(...fp(0,rr-rr*K), ...fp(rr-rr*K,0), ...fp(rr,0))         // TL corner
+        path.close()
+      }
+      break
+    }
+    case 'circle': {
+      // Ellipse CW on screen: top → right → bottom → left
+      const rx = w/2, ry = h/2
+      path.moveTo(...fp(w/2, 0))
+      path.curveTo(...fp(w/2+rx*K,0),   ...fp(w,ry-ry*K),   ...fp(w,h/2))
+      path.curveTo(...fp(w,h/2+ry*K),   ...fp(w/2+rx*K,h),  ...fp(w/2,h))
+      path.curveTo(...fp(w/2-rx*K,h),   ...fp(0,h/2+ry*K),  ...fp(0,h/2))
+      path.curveTo(...fp(0,h/2-ry*K),   ...fp(w/2-rx*K,0),  ...fp(w/2,0))
+      path.close()
+      break
+    }
+    case 'diamond': {
+      addPoly([[w/2,0],[w,h/2],[w/2,h],[0,h/2]])
+      break
+    }
+    case 'cross': {
+      const ox = w*0.35*(1-r2*0.3), oy = h*0.35*(1-r2*0.3)
+      addPoly([[ox,0],[w-ox,0],[w-ox,oy],[w,oy],[w,h-oy],[w-ox,h-oy],[w-ox,h],[ox,h],[ox,h-oy],[0,h-oy],[0,oy],[ox,oy]])
+      break
+    }
+    case 'star4': {
+      const ix = w*(0.08+r2*0.40), iy = h*(0.08+r2*0.40)
+      const pts = []
+      for (let i = 0; i < 8; i++) {
+        const a = i*Math.PI/4 - Math.PI/2, outer = i%2===0
+        pts.push([w/2 + Math.cos(a)*(outer?w/2:ix), h/2 + Math.sin(a)*(outer?h/2:iy)])
+      }
+      addPoly(pts)
+      break
+    }
+    case 'star8': {
+      const ix = w*(0.2+r2*0.2), iy = h*(0.2+r2*0.2)
+      const pts = []
+      for (let i = 0; i < 16; i++) {
+        const a = i*Math.PI/8 - Math.PI/2, outer = i%2===0
+        pts.push([w/2 + Math.cos(a)*(outer?w/2:ix), h/2 + Math.sin(a)*(outer?h/2:iy)])
+      }
+      addPoly(pts)
+      break
+    }
+    case 'ring': {
+      const hs = 0.65 - r2*0.45
+      const rx = w/2, ry = h/2, irx = rx*hs, iry = ry*hs
+      // Outer ellipse CW on screen
+      path.moveTo(...fp(w/2, 0))
+      path.curveTo(...fp(w/2+rx*K,0),  ...fp(w,ry-ry*K),  ...fp(w,h/2))
+      path.curveTo(...fp(w,h/2+ry*K),  ...fp(w/2+rx*K,h), ...fp(w/2,h))
+      path.curveTo(...fp(w/2-rx*K,h),  ...fp(0,h/2+ry*K), ...fp(0,h/2))
+      path.curveTo(...fp(0,h/2-ry*K),  ...fp(w/2-rx*K,0), ...fp(w/2,0))
+      path.close()
+      // Inner hole CCW on screen (= CW in font Y-up = hole)
+      path.moveTo(...fp(w/2, h/2-iry))
+      path.curveTo(...fp(w/2-irx*K,h/2-iry), ...fp(w/2-irx,h/2-iry*K), ...fp(w/2-irx,h/2))
+      path.curveTo(...fp(w/2-irx,h/2+iry*K), ...fp(w/2-irx*K,h/2+iry), ...fp(w/2,h/2+iry))
+      path.curveTo(...fp(w/2+irx*K,h/2+iry), ...fp(w/2+irx,h/2+iry*K), ...fp(w/2+irx,h/2))
+      path.curveTo(...fp(w/2+irx,h/2-iry*K), ...fp(w/2+irx*K,h/2-iry), ...fp(w/2,h/2-iry))
+      path.close()
+      break
+    }
+    case 'heart': {
+      const hx = w/2, top = h*0.28
+      path.moveTo(...fp(hx, top))
+      path.curveTo(...fp(hx,h*0.06), ...fp(w,h*0.06),  ...fp(w,h*0.36))
+      path.curveTo(...fp(w,h*0.64),  ...fp(hx,h*0.82), ...fp(hx,h))
+      path.curveTo(...fp(hx,h*0.82), ...fp(0,h*0.64),  ...fp(0,h*0.36))
+      path.curveTo(...fp(0,h*0.06),  ...fp(hx,h*0.06), ...fp(hx,top))
+      path.close()
+      break
+    }
+    default:
+      addPoly([[0,0],[w,0],[w,h],[0,h]])
   }
 }
 
@@ -2216,28 +2428,38 @@ async function doFontExport() {
   const rawName = (document.getElementById('font-export-name').value.trim() || getCurrentDocName())
   const fontName = rawName.replace(/[^\w\s\-]/g, '').trim() || 'MyFont'
 
-  // Render all designed chars to canvas first, determine global cap-height
-  const RS = 6  // render scale (px per CSS px) — enough for clean marching-squares traces
-  const renders = {}
-  let globalH = 0
-  for (const char of chars) {
-    const r = _fontRenderChar(char, RS)
-    if (r) { renders[char] = r; globalH = Math.max(globalH, r.cssH) }
-  }
-
+  // Scale based on full grid height (including inter-cell gaps, excluding canvas padding)
+  const al = pixelActiveLayer()
+  const fullCssH = al
+    ? (al.rows * (al.cellH ?? 15) + Math.max(0, al.rows - 1) * (al.gapY ?? 1))
+    : 100
   const UPM = 1000, ASC = 800, DESC = -200
-  const fontScale = globalH > 0 ? ASC / globalH : 1
+  const fontScale = fullCssH > 0 ? ASC / fullCssH : 1
 
-  // Advance widths
-  const advMap = {}
+  // Build each glyph by iterating filled cells directly
   let totalAdv = 0, nDesigned = 0
+  const glyphData = {}
+
   for (const char of chars) {
-    const r = renders[char]
-    if (r) {
-      advMap[char] = Math.round(r.cssW * fontScale + 50)
-      totalAdv += advMap[char]; nDesigned++
+    let minX = Infinity, maxX = -Infinity
+    let hasPixels = false
+    for (const layer of pixelState.layers) {
+      if (layer.visible === false) continue
+      const g = layer.glyphs[char]; if (!g) continue
+      const { cellW: lw = 15, rows: lr, cols: lc } = layer
+      for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
+        if (!g[r]?.[c]) continue
+        const { x } = layerGetCellPos(layer, c, r)
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x + lw)
+        hasPixels = true
+      }
     }
+    if (!hasPixels) continue
+    const advW = Math.round((maxX - minX) * fontScale + 50)
+    glyphData[char] = { minX, advW }
+    totalAdv += advW; nDesigned++
   }
+
   const defaultAdv = nDesigned > 0 ? Math.round(totalAdv / nDesigned) : 500
 
   // .notdef: hollow rectangle
@@ -2250,12 +2472,23 @@ async function doFontExport() {
 
   for (const char of chars) {
     const path = new opentype.Path()
-    const r = renders[char]
-    if (r) _addCanvasContours(path, r, fontScale, ASC)
+    const gd = glyphData[char]
+    if (gd) {
+      for (const layer of [...pixelState.layers].reverse()) {
+        if (layer.visible === false) continue
+        const g = layer.glyphs[char]; if (!g) continue
+        const { cellW: lw=15, cellH: lh=15, smooth: ls=0, skew: lsk=0, shape='rect', rows: lr, cols: lc } = layer
+        for (let r = 0; r < lr; r++) for (let c = 0; c < lc; c++) {
+          if (!g[r]?.[c]) continue
+          const { x, y } = layerGetCellPos(layer, c, r)
+          _cellToFontPath(path, x - gd.minX, y - PIXEL_PAD, lw, lh, ls/100, lsk/100, shape, fontScale, ASC)
+        }
+      }
+    }
     glyphs.push(new opentype.Glyph({
       name: _charGlyphName(char),
       unicode: char.codePointAt(0),
-      advanceWidth: advMap[char] ?? defaultAdv,
+      advanceWidth: gd?.advW ?? defaultAdv,
       path
     }))
   }
@@ -3420,20 +3653,21 @@ function renderLargePreviewPixel(text, pc, targetH, lineHPct = 130, lspc = 0) {
   }
   const RS = 2
   const al = pixelActiveLayer()
-  const blankW = al ? (al.cols * (al.cellW ?? 15)) * RS : 60
+  const fullCssH = al ? (al.rows * (al.cellH ?? 15)) : 100
+  const blankCssW = al ? (al.cols * (al.cellW ?? 15)) : 60
   const lines = text.split('\n')
   // render all unique chars once
   const uniqueChars = [...new Set(text.replace(/\n/g, ''))]
   const charMap = new Map(uniqueChars.map(ch => [ch, pixelRenderCharToCanvas(ch, RS)]))
-  const maxH = Math.max(1, ...[...charMap.values()].filter(Boolean).map(r => r.canvas.height))
-  const cssScale = targetH / maxH
+  // Scale based on full grid height so each character keeps its designed proportions
+  const cssScale = targetH / fullCssH
   const extra = (lspc / 100) * targetH
   const lineH = targetH * (lineHPct / 100)
   const totalH = lines.length === 1 ? targetH : (lines.length - 1) * lineH + targetH
   const lineWidths = lines.map(line =>
     [...line].reduce((s, ch, i) => {
       const r = charMap.get(ch)
-      return s + (r ? r.canvas.width * cssScale : blankW * cssScale) + (i > 0 ? extra : 0)
+      return s + (r ? r.cssW * cssScale : blankCssW * cssScale) + (i > 0 ? extra : 0)
     }, 0))
   const totalW = Math.max(4, ...lineWidths)
   const dpr = window.devicePixelRatio || 1
@@ -3451,11 +3685,12 @@ function renderLargePreviewPixel(text, pc, targetH, lineHPct = 130, lspc = 0) {
     ;[...line].forEach((ch, i) => {
       const r = charMap.get(ch)
       if (r) {
-        const dw = r.canvas.width * cssScale, dh = r.canvas.height * cssScale
-        c2.drawImage(r.canvas, x, yOff + (targetH - dh) / 2, dw, dh)
+        const dw = r.cssW * cssScale, dh = r.cssH * cssScale
+        const yTopOffset = r.minY * cssScale
+        c2.drawImage(r.canvas, x, yOff + yTopOffset, dw, dh)
         x += dw
       } else {
-        x += blankW * cssScale
+        x += blankCssW * cssScale
       }
       if (i < line.length - 1) x += extra
     })
